@@ -1,0 +1,25 @@
+{
+  "name": "barlos",
+  "version": "2.11.0",
+  "private": true,
+  "description": "BARLOS - avtomatik investitsiya portfeli boshqaruvi",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "setup": "node --no-warnings scripts/create-admin.js",
+    "test": "node --no-warnings scripts/selftest.js",
+    "backup": "node --no-warnings scripts/backup.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2",
+    "pdfkit": "^0.20.2",
+    "qrcode-generator": "^1.4.4"
+  },
+  "optionalDependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

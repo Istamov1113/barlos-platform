@@ -1,0 +1,221 @@
+/* BARLOS ko'rinishi: qora va tillarang, shaffof (shisha) yuzalar, Jett uslubidagi jadval va ro'yxatlar.
+   Ranglar style.css dagi :root tokenlaridan olinadi. */
+body{background:
+  radial-gradient(1100px 620px at 8% -8%,rgba(216,176,74,.10),transparent 62%),
+  radial-gradient(900px 560px at 100% 0%,rgba(216,176,74,.05),transparent 60%),
+  radial-gradient(800px 600px at 50% 120%,rgba(185,138,34,.06),transparent 60%),var(--bg);background-attachment:fixed}
+:root[data-theme="light"] body{background:radial-gradient(1000px 560px at 6% -10%,rgba(216,176,74,.22),transparent 62%),radial-gradient(800px 520px at 100% 0%,rgba(216,176,74,.10),transparent 60%),var(--bg);background-attachment:fixed}
+::selection{background:var(--accent);color:var(--on-accent)}
+h1{font-size:28px;font-weight:700;letter-spacing:-.02em}
+h2{font-size:16px;font-weight:600}
+.sub{font-size:13px}
+
+/* Shisha yuzalar */
+.card,details.add,.opt,.res,.tip,.auth .card{background:var(--surface);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--line);box-shadow:inset 0 1px 0 var(--hi),var(--shadow)}
+.card{border-radius:var(--r);padding:20px}
+.stack{gap:18px}
+.opt:hover,.res:hover{background:var(--surface2)}
+.opt[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 24px -6px var(--accent)}
+
+/* Yon panel */
+.side{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-right:1px solid var(--line);padding:22px 14px}
+.brand b,.mbrand b{background:linear-gradient(135deg,#F2D98A,#C9972C);-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:.2em}
+:root[data-theme="light"] .brand b{background:linear-gradient(135deg,#B98A22,#7A5A0E);-webkit-background-clip:text;background-clip:text}
+.logo{box-shadow:0 0 0 1px var(--line),0 6px 18px -6px rgba(216,176,74,.5)}
+.nav button{position:relative;padding:10px 12px;border-radius:10px;transition:background .15s,color .15s}
+.nav button:hover{background:var(--surface2);color:var(--ink)}
+.nav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px rgba(216,176,74,.22)}
+.nav button[aria-current="page"]::before{content:"";position:absolute;left:-14px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+
+/* Tugmalar va maydonlar */
+.btn{background:linear-gradient(135deg,#E9CB74,#C79A2E);border:0;color:var(--on-accent);border-radius:10px;padding:9px 16px;font-weight:600;box-shadow:0 6px 18px -8px rgba(216,176,74,.7);transition:filter .15s,transform .05s}
+:root[data-theme="light"] .btn{background:linear-gradient(135deg,#B98A22,#8F6B12);color:#fff}
+.btn:hover:not(:disabled){filter:brightness(1.07)} .btn:active:not(:disabled){transform:translateY(1px)}
+.btn.ghost{background:transparent;border:1px solid rgba(216,176,74,.45);color:var(--accent);box-shadow:none}
+.btn.ghost:hover:not(:disabled){background:var(--accent-soft);filter:none}
+.btn.warnb{background:var(--bad);color:#1a0705;box-shadow:none}
+.btn.small{padding:5px 11px;border-radius:8px}
+input[type=password],input[type=email],input[type=text],input[type=number],input[type=date],input[type=datetime-local],select,textarea{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--ink)}
+:root[data-theme="light"] input,:root[data-theme="light"] select,:root[data-theme="light"] textarea{background:rgba(255,255,255,.7)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+select option{background:#14110a;color:var(--ink)}
+:root[data-theme="light"] select option{background:#fff}
+.seg{border-radius:999px;background:var(--surface2);border:1px solid var(--line);padding:3px;gap:2px}
+.seg button{border-radius:999px;padding:6px 14px}
+.seg button[aria-pressed="true"]{background:linear-gradient(135deg,#E9CB74,#C79A2E);color:var(--on-accent);box-shadow:0 4px 12px -6px rgba(216,176,74,.8)}
+.chip{background:var(--surface2);border-color:var(--line)}
+.chip[aria-pressed="true"]{border-color:rgba(216,176,74,.6);background:var(--accent-soft);color:var(--accent)}
+.notice{border:1px solid rgba(232,176,75,.25)}
+.toast{background:rgba(20,17,10,.92);color:var(--ink);border:1px solid rgba(216,176,74,.35);backdrop-filter:blur(10px);box-shadow:var(--shadow)}
+:root[data-theme="light"] .toast{background:#18130A;color:#F4F1EA}
+
+/* Pill / holat */
+.pill{padding:4px 11px;border-radius:8px;font-size:12px;font-weight:600;letter-spacing:0}
+.p-sb{background:var(--good);color:#06150d} .p-ss{background:var(--bad);color:#1a0705}
+.p-h{background:var(--surface2);color:var(--ink);border:1px solid var(--line)}
+.badge{border-radius:8px;padding:3px 9px;background:var(--surface2);color:var(--ink);font-weight:500}
+
+/* ---------- Jett uslubidagi jadval ---------- */
+.tw{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.015);margin-inline:0;padding-inline:0;overflow-x:auto}
+table{border-collapse:separate;border-spacing:0;min-width:680px}
+thead th{background:rgba(255,255,255,.04);color:var(--ink);font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;padding:15px 16px;border-bottom:1px solid var(--line);position:relative}
+:root[data-theme="light"] thead th{background:rgba(40,30,8,.045)}
+th:first-child,td:first-child{padding-left:18px} th:last-child,td:last-child{padding-right:18px}
+td{padding:14px 16px;border-bottom:1px solid var(--line);font-size:13.5px}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .12s}
+tbody tr:hover td{background:rgba(255,255,255,.028)}
+:root[data-theme="light"] tbody tr:hover td{background:rgba(40,30,8,.03)}
+tr.sel td{background:var(--accent-soft)}
+td.n,th.n{text-align:right}
+td.act,th.act{background:#0d0c09;box-shadow:-10px 0 12px -10px rgba(0,0,0,.6)}
+:root[data-theme="light"] td.act,:root[data-theme="light"] th.act{background:#f7f3e8}
+tr.det>td{background:rgba(255,255,255,.025)}
+tr.det table{background:transparent}
+.asset-cell{gap:12px}
+.asset-cell b{font-weight:600;font-size:14px;line-height:1.25}
+.asset-cell small{font-size:12.5px;color:var(--muted);letter-spacing:.01em;margin-top:1px}
+.asset-cell .sy{font-size:12.5px;color:var(--muted);display:block}
+/* Yo'nalish chizig'i: sotib olish yashil, sotish qizil */
+.dbar{width:3px;height:34px;border-radius:2px;background:var(--line);flex:none;margin-right:-2px}
+.dbar.buy{background:var(--good)} .dbar.sell{background:var(--bad)} .dbar.inc{background:var(--accent)}
+.ty{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;white-space:nowrap}
+.ty b{font-weight:500}.ty small{color:var(--muted);font-size:12px}
+.ty.buy b{color:var(--good)} .ty.sell b{color:var(--bad)} .ty.inc b{color:var(--accent)}
+.st{display:inline-block;background:rgba(255,255,255,.07);color:var(--ink);border-radius:9px;padding:6px 13px;font-size:12.5px;font-weight:600;white-space:nowrap}
+:root[data-theme="light"] .st{background:rgba(40,30,8,.07)}
+.st.ok{background:var(--good-soft);color:var(--good)} .st.no{background:rgba(255,255,255,.06);color:var(--muted)} .st.warn{background:var(--warn-soft);color:var(--warn)} .st.bad{background:var(--bad-soft);color:var(--bad)}
+.lg{border-width:1.5px;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 10%,transparent)}
+
+/* Ro'yxatlar (hisob kartalari, qatorlar) */
+.acc{padding:0}
+.acc-h{padding:16px 18px;transition:background .15s}
+.acc-h:hover{background:var(--surface2)}
+.acc-b{border-top:1px solid var(--line)}
+.arow{background:transparent;border-top:1px solid var(--line);padding:11px 18px 11px 52px;transition:background .12s}
+.arow:hover{background:rgba(255,255,255,.025)}
+.bar{height:5px;background:rgba(255,255,255,.07);border-radius:3px}
+.stat b{font-weight:500}
+.shares{gap:14px}
+code,.code{background:rgba(255,255,255,.05);border-color:var(--line)}
+.empty b{color:var(--ink)}
+.verdict{border:1px solid transparent} .verdict.ok{border-color:rgba(70,201,139,.25)} .verdict.no{border-color:rgba(242,118,107,.25)}
+.signal{background:rgba(255,255,255,.04)}
+.lock{color:var(--muted)}
+.ratio-c b{background:linear-gradient(135deg,#F2D98A,#C9972C);-webkit-background-clip:text;background-clip:text;color:transparent}
+:root[data-theme="light"] .ratio-c b{background:linear-gradient(135deg,#B98A22,#7A5A0E);-webkit-background-clip:text;background-clip:text}
+
+/* Kirish oynasi */
+.auth .card{border-color:rgba(216,176,74,.25);box-shadow:inset 0 1px 0 var(--hi),0 20px 60px rgba(0,0,0,.5),0 0 80px -30px rgba(216,176,74,.5)}
+
+/* Pastki panel (mobil) */
+@media (max-width:820px){
+  .side{background:rgba(12,11,8,.82);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-top:1px solid var(--line);border-right:0}
+  :root[data-theme="light"] .side{background:rgba(250,246,236,.88)}
+  .nav button[aria-current="page"]::before{display:none}
+  .card{padding:16px}
+  h1{font-size:23px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.side{height:100vh}
+@media (max-width:820px){.side{height:auto}}
+.stats{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.stat b{font-size:17px;white-space:nowrap}
+.ratio-c span{font-size:10px;letter-spacing:.02em;max-width:60%}
+.asset-cell{min-width:200px}.asset-cell b{white-space:nowrap}
+td{padding-inline:12px} th{padding-inline:12px}
+.asset-cell{min-width:176px}
+.sig-banner{border-color:rgba(216,176,74,.45);box-shadow:inset 0 1px 0 var(--hi),0 0 0 1px rgba(216,176,74,.18),0 18px 44px -18px rgba(216,176,74,.45);margin-bottom:18px}
+.sig-banner .sigrow{padding:10px 0;border-top:1px solid var(--line);gap:14px;flex-wrap:wrap}
+.sig-banner .sigrow:first-of-type{border-top:0}
+
+/* Portfel taqsimoti: 3 halqa */
+.sb path{stroke:var(--surface);stroke-width:1.6;cursor:pointer;outline:none;transition:opacity .15s,filter .15s}
+.sb path.dim{opacity:.28}
+.sb path.on,.sb path:focus-visible{filter:brightness(1.18) saturate(1.1);stroke:var(--ink);stroke-width:1.4}
+.sbtip{position:absolute;z-index:5;pointer-events:none;min-width:150px;max-width:220px;display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:10px;font-size:12px;background:var(--bg);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.sbtip[hidden]{display:none}
+.sbtip b{font-size:13.5px;color:var(--ink)}
+.sbtip small{color:var(--muted);font-size:11px}
+.sbtip .num:nth-of-type(1){color:var(--accent);font-size:15px;font-weight:600}
+.ratio-wrap{max-width:380px}
+.hm .ratio-wrap{max-width:330px}
+.ratio-c{inset:auto;left:50%;top:50%;width:36%;height:36%;transform:translate(-50%,-50%)}
+.ratio-c b{font-size:clamp(20px,4.2vw,28px)}
+.ratio-c span{font-size:9px;max-width:100%;line-height:1.15;margin-top:3px}
+
+.tw tfoot td{font-weight:600;border-top:1px solid rgba(216,176,74,.55);background:rgba(216,176,74,.06);padding-top:11px;padding-bottom:11px}
+.tw tfoot .st.good{color:var(--good)}
+
+/* Shartnoma bandlari */
+.auth.wide .card{max-width:760px;width:100%}
+.ctr{max-height:300px;overflow:auto;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);font-size:13px;line-height:1.55;text-align:left}
+.ctr p{margin:0 0 10px}.ctr p small{display:block;color:var(--muted);font-size:11px}
+.ctr h4{margin:12px 0 6px;color:var(--accent)}
+.ctr-full{margin-top:8px;font-size:13px}.ctr-full summary{cursor:pointer;color:var(--accent)}
+.ctr-full .ctr{margin-top:8px;max-height:380px}
+
+.ctl-row{display:flex;flex-direction:column;gap:6px}
+.ctl-row textarea{width:100%;font:inherit;font-size:13px;line-height:1.5;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);resize:vertical}
+
+/* ===== 2.11.0: aktiv oynasi (modal), omonat signali, profil, chat ===== */
+body.mdl-open{overflow:hidden}
+.mdl-bg{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.66);backdrop-filter:blur(4px);overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:4vh 12px}
+.mdl{position:relative;width:min(760px,100%);background:#12100A;border:1px solid rgba(216,176,74,.28);border-radius:18px;padding:22px 22px 26px;box-shadow:0 30px 80px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:14px}
+:root[data-theme="light"] .mdl{background:#FBF8EF}
+.mdl.wide{width:min(1080px,100%)}
+.mdl h3{font-size:14px;margin:6px 0 0;color:var(--accent);text-transform:uppercase;letter-spacing:.05em}
+.mdl-x{position:absolute;top:12px;right:14px;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface2);color:var(--ink);font-size:20px;line-height:1;cursor:pointer}
+.mdl-h{display:flex;align-items:center;gap:14px;padding-right:40px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0}
+.kv>div{background:var(--bg);padding:9px 13px;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+:root[data-theme="light"] .kv>div{background:#FBF8EF}
+.kv dt{color:var(--muted);font-size:12.5px}.kv dd{margin:0;text-align:right;font-family:var(--f-mono);font-size:13px}
+.mstats .stat b{font-size:17px}.stat.main b{color:var(--accent)}
+.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 10px 10px 0;font-size:13px;line-height:1.55}
+.note.lock{border-color:var(--good);background:var(--good-soft)}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.card.inner{padding:12px 14px;background:var(--surface2);box-shadow:none}
+.mchart{width:100%;height:auto;font:10.5px var(--f-mono);fill:var(--muted)}
+.arow.link,.alink{cursor:pointer}.arow.link:hover b{color:var(--accent)}.alink:hover{opacity:.85}
+table.bn td,table.bn th{white-space:nowrap}
+.dbar{display:inline-block;width:3px;height:14px;border-radius:2px;margin-right:8px;vertical-align:middle;background:var(--good)}.dbar.out{background:var(--bad)}
+.sd{font-weight:600;font-size:12.5px;color:var(--good)}.sd.out{color:var(--bad)}
+.sig{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface2)}
+.sig-h{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;padding:12px 16px;cursor:pointer;justify-content:space-between}
+.sig-h .acc-t{display:flex;flex-direction:column;flex:1}.sig-h small{color:var(--muted)}.sig-h .acc-n{text-align:right;display:flex;flex-direction:column}
+.sig-b{padding:4px 16px 16px;display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line)}
+.avi{border-radius:50%;object-fit:cover;flex:none;display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:var(--on-accent);font-weight:700}
+.idcard{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface2)}
+.idcard small{display:block;color:var(--muted);font-size:11.5px}.idcard b{font-size:15px}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--muted)}.chk input{margin-top:3px}
+.chk-list{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px}
+/* chat */
+.chat{display:grid;grid-template-columns:320px 1fr;gap:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface);height:calc(100vh - 170px);min-height:460px}
+.cside{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.cs-top{display:flex;gap:8px;padding:10px;border-bottom:1px solid var(--line)}.cs-top input{flex:1;min-width:0}
+.clist{overflow:auto;min-height:0;flex:1}.clist.small{max-height:260px;flex:none;border:1px solid var(--line);border-radius:12px}
+.ci{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+.ci:hover,.ci[aria-current="true"]{background:var(--accent-soft)}.ci.static{cursor:default}.ci.static:hover{background:none}
+.ci-t{display:flex;flex-direction:column;flex:1;min-width:0}.ci-t b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ci-t small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-r{display:flex;flex-direction:column;align-items:flex-end;gap:4px;color:var(--muted)}
+.ub{font-style:normal;background:var(--accent);color:var(--on-accent);border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px}
+.nbadge{background:var(--accent);color:var(--on-accent);border-radius:999px;font-size:10px;font-weight:700;padding:0 6px;font-style:normal;margin-left:6px}
+.cmain{display:flex;flex-direction:column;min-height:0;min-width:0}
+.chead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}.ch-t{flex:1;display:flex;flex-direction:column;min-width:0}.ch-t small{color:var(--muted)}
+.cback{display:none}
+.cmsgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.msg{display:flex;gap:8px;align-items:flex-end;max-width:82%}.msg.mine{align-self:flex-end;flex-direction:row-reverse}
+.bub{background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:7px 11px;min-width:80px}.msg.mine .bub{background:var(--accent-soft);border-color:rgba(216,176,74,.4)}
+.who{font-size:12px;font-weight:600;color:var(--accent)}.stf{font-size:10px;font-weight:700;background:var(--accent);color:var(--on-accent);border-radius:6px;padding:0 5px;text-transform:uppercase}
+.tx{white-space:pre-wrap;word-break:break-word}.mt{font-size:11px;color:var(--muted);text-align:right}.hs{font-family:var(--f-mono);opacity:.7;cursor:help}.hs2{word-break:break-all;font-size:11.5px}
+.fwd{font-size:11px;color:var(--accent)}.rq{border-left:2px solid var(--accent);padding:2px 8px;margin:2px 0;font-size:12px;color:var(--muted);cursor:pointer}.rq b{display:block}
+.macts{display:flex;gap:10px}.macts button{all:unset;cursor:pointer;font-size:11.5px;color:var(--muted)}.macts button:hover{color:var(--accent)}
+.sysmsg{align-self:center;font-size:12px;color:var(--muted);background:var(--surface2);border-radius:999px;padding:2px 12px}
+.msg.flash .bub{outline:2px solid var(--accent)}
+.cform{border-top:1px solid var(--line);padding:10px}.cform textarea{flex:1;resize:none;min-height:40px;max-height:120px}.cform.ro{color:var(--muted);text-align:center}
+.rbar{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:0 4px 6px}.rbar button{all:unset;cursor:pointer}
+.cempty{margin:auto;text-align:center;padding:24px;max-width:380px}.pad{padding:14px}
+@media(max-width:820px){.chat{grid-template-columns:1fr;height:calc(100vh - 210px)}.chat.open .cside{display:none}.chat:not(.open) .cmain{display:none}.cback{display:inline-flex}.msg{max-width:92%}.mdl{padding:18px 14px}.mdl-bg{padding:0}.mdl{border-radius:0;min-height:100vh}}
+a.btn{text-decoration:none;font-family:inherit}
+.kv dd{min-width:0;overflow-wrap:anywhere}

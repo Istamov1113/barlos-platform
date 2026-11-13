@@ -1,0 +1,29 @@
+.auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.auth .card{width:100%;max-width:400px;display:flex;flex-direction:column;gap:14px}
+.auth .brand{justify-content:center;padding:0}
+.auth h1{font-size:22px;text-align:center}
+.auth .link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline;font-size:13px}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:8px 12px;font-size:13px}
+.okm{background:var(--good-soft);color:var(--good);border-radius:8px;padding:8px 12px;font-size:13px}
+input[type=password],input[type=email],input[type=text],input[type=number],input[type=date],input[type=datetime-local],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0;max-width:100%;font:inherit;color:inherit}
+.field input,.field select,.field textarea{width:100%}
+.empty{text-align:center;padding:28px 12px;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-family:var(--f-display);font-size:17px;margin-bottom:4px}
+code,.code{font-family:var(--f-mono);font-size:12px;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:2px 6px;overflow-wrap:anywhere}
+pre.code{display:block;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
+.res{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.res:hover{background:var(--surface2)}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--ink)}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.dot-ok{background:var(--good)} .dot-bad{background:var(--bad)}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
+.tabs{display:inline-flex;max-width:100%}
+.nav button.sub{padding-left:38px;font-size:13px}
+.rowlink{cursor:pointer}
+.rowlink:hover td{background:var(--surface2)}
+.mini{font-size:12px}
+.nowrap{white-space:nowrap}
+.sep{height:1px;background:var(--line);margin:4px 0}
+@media (max-width:820px){.nav button{font-size:10px}.nav{overflow-x:auto}.nav button{min-width:58px}}
+.mbrand{display:none!important}
