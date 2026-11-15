@@ -1,6 +1,6 @@
 {
   "name": "barlos",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "private": true,
   "description": "BARLOS - avtomatik investitsiya portfeli boshqaruvi",
   "main": "server.js",

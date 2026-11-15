@@ -508,7 +508,7 @@
   };
 
   /* ================= HUJJATLAR (PDF hisobotlar) ================= */
-  var RKIND = { oylik: 'Oylik', chorak: 'Chorak', yillik: 'Yillik', napp: 'NAPP', soliq: 'Soliq' };
+  var RKIND = { oylik: 'Oylik', chorak: 'Chorak', yillik: 'Yillik', napp: 'NAPP', soliq: 'Soliq', buxgalteriya: 'Buxgalteriya' };
   function repLoad(force) {
     if (!ST.repBusy && (force || ST.reps === undefined)) { ST.repBusy = 1; B.api('GET', '/api/reports').then(function (r) { ST.reps = r; ST.repBusy = 0; B.rerender(); }).catch(function () { ST.repBusy = 0; if (ST.reps === undefined) ST.reps = { list: [] }; }); }
     return ST.reps || null;
