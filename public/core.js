@@ -77,6 +77,51 @@
     return { q: q, avg: avg, flows: flows, income: income };
   }
 
+
+  /* Ikki yoqlama yozuv (debet/kredit) ledgeri: tranzaksiyalar jurnalidan hisoblanadi, alohida saqlanmaydi.
+     Har yozuv: { t, tx, type, note, lines: [{ side: 'D'|'C', acct, venue, aid, qty, uzs }] }.
+     acct: 'asset' (mijozning birja/broker/bankdagi aktivi) yoki 'ext' (Tashqi hisob, Komissiya, Daromad).
+     Har bir yozuvda debet yig'indisi = kredit yig'indisi (so'mda). Qoldiq: bal[venue|aid]. */
+  function ledger(S, accId, opt) {
+    var am = assetMap(S), out = [], bal = {}, ents = [];
+    S.tx.filter(function (t) { return t.acc === accId && t.status === 'Bajarildi'; }).sort(function (a, b) { return a.t - b.t || (a.id < b.id ? -1 : 1); }).forEach(function (t) {
+      var x = am[t.aid]; if (!x) return;
+      var fx = fxOf(S, x.curr), px = (x.price == null ? 1 : x.price), feeIn = (t.feeAsset && t.feeAsset === x.sym) ? (t.fee || 0) : 0;
+      var feeUzs = (t.fee && !feeIn) ? t.fee * (t.feeAsset === 'UZS' ? 1 : fxOf(S, 'USD')) : 0;
+      var st = settleAsset(S, x, t), useCash = st && t.cash !== false, L = [];
+      function A(side, a, qty, uzs) { L.push({ side: side, acct: 'asset', venue: venueOf(a), aid: a.id, sym: a.sym, qty: qty, uzs: uzs }); }
+      function E(side, name, uzs) { L.push({ side: side, acct: 'ext', venue: '', aid: '', sym: '', name: name, qty: 0, uzs: uzs }); }
+      function cu(uzs) { return uzs / ((fxOf(S, st.curr) || 1) * (st.price || 1)); }
+      var gross = t.amount * (t.price || 0) * fx;
+      if (t.type === 'DEPOZIT') { A('D', x, t.amount, gross); E('C', 'Tashqi hisob (mijoz)', gross); }
+      else if (t.type === 'WITHDRAW') { A('C', x, t.amount, gross); E('D', 'Tashqi hisob (mijoz)', gross); }
+      else if (t.type === 'TRANSFER') {
+        var to = am[t.to], tu = to ? t.toAmount * (to.price == null ? 1 : to.price) * fxOf(S, to.curr) : 0, outU = (t.amount + (t.xfee || 0)) * px * fx;
+        A('C', x, t.amount + (t.xfee || 0), outU); if (to) A('D', to, t.toAmount, tu); if (outU - tu > 0.005) E('D', 'Komissiya (xarajat)', outU - tu); else if (tu - outU > 0.005) E('C', 'Kurs farqi', tu - outU);
+      } else if (t.type === 'BUY') {
+        var net = t.amount - feeIn; A('D', x, net, net * (t.price || 0) * fx); if (feeIn > 0) E('D', 'Komissiya (xarajat)', feeIn * (t.price || 0) * fx); if (feeUzs > 0) E('D', 'Komissiya (xarajat)', feeUzs);
+        var tot = gross + feeUzs; if (useCash) A('C', st, cu(tot), tot); else E('C', 'Tashqi hisob (naqdga ta’sirsiz)', tot);
+      } else if (t.type === 'SELL') {
+        var proc = gross - feeUzs; A('C', x, t.amount + feeIn, (t.amount + feeIn) * (t.price || 0) * fx); if (useCash) A('D', st, cu(proc), proc); else E('D', 'Tashqi hisob (naqdga ta’sirsiz)', proc);
+        if (feeUzs > 0) E('D', 'Komissiya (xarajat)', feeUzs);
+        var dif = (gross + feeIn * (t.price || 0) * fx) - proc - feeUzs; if (feeIn > 0) E('D', 'Komissiya (xarajat)', feeIn * (t.price || 0) * fx);
+      } else if (t.type === 'DIVIDEND' || t.type === 'FOIZ') { var iu = t.amount * px * fx; A('D', x, t.amount, iu); E('C', 'Daromad (' + (t.type === 'FOIZ' ? 'foiz' : 'dividend') + ')', iu); }
+      else if (t.type === 'KUPON') { var ku = t.amount * fx; if (st) A('D', st, cu(ku), ku); else E('D', 'Tashqi hisob', ku); E('C', 'Daromad (kupon)', ku); }
+      /* yozuvni so'mda muvozanatlash (yaxlitlash/kurs farqi) */
+      var d = 0, c = 0; L.forEach(function (l) { if (l.side === 'D') d += l.uzs; else c += l.uzs; });
+      if (Math.abs(d - c) > 0.005) { if (d > c) E('C', 'Yaxlitlash/kurs farqi', d - c); else E('D', 'Yaxlitlash/kurs farqi', c - d); }
+      L.forEach(function (l) { if (l.acct === 'asset') { var k = l.venue + '|' + l.aid; bal[k] = (bal[k] || 0) + (l.side === 'D' ? l.qty : -l.qty); l.bal = bal[k]; } });
+      ents.push({ t: t.t, tx: t.id, blk: t.blk, type: t.type, note: t.note || '', ex: t.ex || '', lines: L });
+    });
+    return { entries: ents, bal: bal };
+  }
+  /* Mijoz x birja/broker/bank matritsasi: { venue: { aid: qty } } (ledger qoldig'idan) */
+  function venueBalances(S, accId) {
+    var lg = ledger(S, accId), res = {};
+    Object.keys(lg.bal).forEach(function (k) { var i = k.indexOf('|'), v = k.slice(0, i), a = k.slice(i + 1); if (Math.abs(lg.bal[k]) < 1e-12) return; (res[v] = res[v] || {})[a] = lg.bal[k]; });
+    return res;
+  }
+
   function val(S, x, qty) { return (x.price == null ? 0 : qty * x.price * fxOf(S, x.curr)); }
 
   function targetOf(acc, x) { var t = acc.targets && acc.targets[x.id]; return t != null ? +t : (x.target || 0); }
@@ -472,7 +517,7 @@
   }
 
   var Core = { GROUPS: GROUPS, GKEYS: GKEYS, STATUS: STATUS, TYPES: TYPES, SET: SET, BENCH_RATE: BENCH_RATE, BENCHC: BENCHC, FEE: FEE, fxOf: fxOf, assetMap: assetMap, cashAsset: cashAsset,
-    venueOf: venueOf, settleAsset: settleAsset, isAuto: isAuto, tradable: tradable, feeOf: feeOf, position: position, val: val, targetOf: targetOf, view: view, held: held, band: band, analyze: analyze,
+    venueOf: venueOf, ledger: ledger, venueBalances: venueBalances, settleAsset: settleAsset, isAuto: isAuto, tradable: tradable, feeOf: feeOf, position: position, val: val, targetOf: targetOf, view: view, held: held, band: band, analyze: analyze,
     netDep: netDep, bench: bench, quarter: quarter, decide: decide, clientCalc: clientCalc, poolRun: poolRun, snap: snap, checkTx: checkTx, orderTx: orderTx, groupSums: groupSums, accLabel: accLabel, accrue: accrue, stochRsi: stochRsi, typeTarget: typeTarget, STOCH_DEF: STOCH_DEF, dayNum: dayNum, dayStr: dayStr, addMonths: addMonths, depState: depState, depDue: depDue, bondSched: bondSched, bondAccrued: bondAccrued, bondYtm: bondYtm, bondSignal: bondSignal, bondDue: bondDue, qtyAt: qtyAt, assetStats: assetStats, assetTx: assetTx };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else root.Core = Core;
 })(typeof self !== 'undefined' ? self : this);

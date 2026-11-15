@@ -53,6 +53,14 @@ Server o'zi ham har 6 soatda `data/backups` papkasiga zaxira nusxa saqlab boradi
 2. Aktivlar → Tarixiy ma'lumotlar → "Barcha tarixni tozalash".
 3. Barcha uzse.uz fayllarini (nomida ISIN bor) bitta bo'lib shu bo'limdagi "Yuklash" orqali qayta yuklang. Har bir aktivning "Manba kodi"da ISIN bo'lishi shart.
 
+## 2.12.0: Ledger (debet/kredit), Mablag'lar matritsasi, hisobotlarni tasdiqlash + QR, ommaviy import
+
+- **Ledger.** Mablag'lar sahifasida har bir mijoz uchun ikki yoqlama (debet/kredit) ko'chirma: har tranzaksiya D va K qatorlari, qarshi hisoblar (Tashqi hisob, Komissiya, Daromad) va birja/broker/bank bo'yicha qoldiq. Ledger jurnaldan hisoblanadi (alohida saqlanmaydi), shuning uchun jurnal bilan doim mos. Birja/broker/bank bo'yicha filtr bor.
+- **Birja/broker/bank ro'yxati.** Admin yangi joy qo'shadi (masalan Binance). Aktivning "Birja/joy" maydoni shu nomlardan biri bo'lsa, qoldiq shu ustunda ko'rinadi. Pulni joyga o'tkazish: avvalgidek "Ichki o'tkazma" (bir nechta hisobdan ulushga qarab).
+- **Mablag'lar matritsasi.** Tepadan pastga: jami va mijozlar; chapdan o'ngga: birja, broker, banklar. Katak ustiga bosilsa tarkibi ko'rinadi.
+- **Hisobotlar.** Har PDF oxirida QR kod: skaner qilinsa tasdiqlangan hujjat ochiladi (`/v/<token>`). Yangi hujjat "tasdiq kutilmoqda" bo'ladi; mijoz faqat tasdiqlanganini ko'radi. Admin: tasdiqlash / tasdiqni olish / qayta yangilash / tahrirlash (sarlavha va izoh) / o'chirish (faqat tasdiqlanmagan). Hujjat yangilansa, eski QR ham eng so'nggi tasdiqlangan versiyani ochadi. QR havolasi uchun sayt manzili (Sozlamalar: `baseUrl` yoki `.env` BASE_URL) birinchi admin so'rovidan avtomatik olinadi. **Eslatma:** 2.12.0 dan oldingi hujjatlar "tasdiq kutilmoqda" ko'rinishida bo'ladi: "Kutayotganlarning hammasini tasdiqlash" tugmasini bosing.
+- **Import.** Mablag'lar sahifasida (admin) CSV orqali tranzaksiyalarni ommaviy kiritish: avval tekshiriladi, birorta xato bo'lsa hech narsa yozilmaydi. Excelda "Saqlash → CSV". Namuna fayl yuklab olinadi.
+
 ## 2.11.0: Hisobotlar+Hujjatlar birlashdi, aktiv oynasi, omonat signali, profil, chat
 
 **Yangilash:** `data/` va `.env` ga tegmang. `npm install`, so'ng serverni qayta ishga tushiring.

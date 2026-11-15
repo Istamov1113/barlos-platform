@@ -6,6 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
+const qrgen = require('qrcode-generator');
+const als = new AsyncLocalStorage();
 const db = require('./db');
 const hist = require('./hist');
 const Core = require('../public/core.js');
@@ -141,9 +144,25 @@ function table(doc, cols, rows, opt) {
 }
 function kv(doc, pairs, w1) { pairs.forEach(p => { ensure(doc, 14); const y = doc.y; doc.font('R').fontSize(9).fillColor(MUTED).text(p[0], 40, y, { width: w1 || 230 }); doc.font('B').fillColor(p[2] || INK).text(String(p[1]), 40 + (w1 || 230), y, { width: doc.page.width - 80 - (w1 || 230) }); doc.y = Math.max(doc.y, y + 12); }); doc.font('R').fillColor(INK); doc.moveDown(0.3); }
 function signLine(doc, who) { ensure(doc, 50); doc.moveDown(1.2); const y = doc.y; who.forEach((w, i) => { const x = 40 + i * 250; doc.moveTo(x, y + 14).lineTo(x + 170, y + 14).lineWidth(0.5).strokeColor(MUTED).stroke(); doc.font('R').fontSize(8).fillColor(MUTED).text(w, x, y + 17); }); doc.y = y + 34; doc.fillColor(INK).fontSize(9); }
+/* Hujjat oxirida QR kod: skaner qilinsa shu hujjat ochiladi (faqat tasdiqlangan bo'lsa) */
+function qrBlock(doc) {
+  const c = als.getStore(); if (!c || !c.url) return;
+  if (doc.y > doc.page.height - 190) doc.addPage();
+  const q = qrgen(0, 'M'); q.addData(c.url); q.make();
+  const n = q.getModuleCount(), size = 84, cell = size / n, x0 = 40, y0 = Math.min(Math.max(doc.y + 16, 60), doc.page.height - 170);
+  doc.save().rect(x0 - 4, y0 - 4, size + 8, size + 8).fill('#FFFFFF');
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) doc.rect(x0 + k * cell, y0 + r * cell, cell + 0.2, cell + 0.2).fill('#000000');
+  doc.restore();
+  doc.font('B').fontSize(9).fillColor(INK).text('Hujjatni tekshirish', x0 + size + 16, y0 + 4, { width: 380, lineBreak: false });
+  doc.font('R').fontSize(8).fillColor(MUTED).text('QR kodni skaner qilsangiz, shu hujjatning asl nusxasi ochiladi.', x0 + size + 16, y0 + 18, { width: 380, lineBreak: false });
+  doc.text(c.url, x0 + size + 16, y0 + 32, { width: 380, lineBreak: false });
+  doc.text('Hujjat tokeni: ' + c.tok.slice(0, 8) + ' · versiya ' + (c.ver || 1), x0 + size + 16, y0 + 46, { width: 380, lineBreak: false });
+  if (c.remark) doc.text('Izoh: ' + String(c.remark).slice(0, 160), x0 + size + 16, y0 + 60, { width: 380, lineBreak: false });
+}
 function finish(doc, cfgNote) {
   return new Promise((resolve, reject) => {
     const chunks = []; doc.on('data', c => chunks.push(c)); doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject);
+    qrBlock(doc);
     const rg = doc.bufferedPageRange(), n = rg.count;
     for (let i = 0; i < n; i++) { doc.switchToPage(rg.start + i); doc.page.margins.bottom = 0; doc.font('R').fontSize(7.5).fillColor(MUTED); doc.text('BARLOS avtomatik hisoboti · ' + (doc._m.stamp || '') + (cfgNote ? ' · ' + cfgNote : ''), 40, doc.page.height - 34, { width: doc.page.width - 160, lineBreak: false }); doc.text((i + 1) + ' / ' + n, doc.page.width - 100, doc.page.height - 34, { width: 60, align: 'right', lineBreak: false }); }
     doc.end();
@@ -299,22 +318,27 @@ function exists(scope, kind, ref, accId) { return db.all('reports').some(r => r.
 function store(meta, buf) {
   const prev = db.all('reports').filter(r => r.scope === meta.scope && r.kind === meta.kind && r.ref === meta.ref && (r.accId || '') === (meta.accId || '')), id = 'R' + (100000 + db.seq('rep')), file = id + '.pdf';
   fs.writeFileSync(path.join(dir(), file), buf);
-  const rec = Object.assign({}, meta, { id, file, size: buf.length, t: Date.now(), ver: prev.length + 1, hash: crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) });
+  const c = als.getStore() || {}, rec = Object.assign({}, meta, { id, file, status: 'draft', tok: c.tok || crypto.randomBytes(12).toString('hex'), remark: c.remark || '', size: buf.length, t: Date.now(), ver: prev.length + 1, hash: crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) });
   db.put('reports', rec); return rec;
 }
 /* kind: oylik|chorak|yillik (mijoz, accId kerak) yoki napp|soliq (admin) */
-async function generate(S, st, kind, ref, accId, opt) {
+function generate(S, st, kind, ref, accId, opt) {
+  opt = opt || {}; const tok = crypto.randomBytes(12).toString('hex'), prev = db.all('reports').filter(r => r.scope === (kind === 'napp' || kind === 'soliq' ? 'admin' : 'client') && r.kind === kind && r.ref === ref && (r.accId || '') === (accId || ''));
+  const base = String(opt.base || (st && st.baseUrl) || process.env.BASE_URL || '').replace(/\/+$/, '');
+  return als.run({ tok, url: base ? base + '/v/' + tok : '', remark: opt.remark || '', ver: prev.length + 1 }, () => generate0(S, st, kind, ref, accId, opt));
+}
+async function generate0(S, st, kind, ref, accId, opt) {
   opt = opt || {}; const cfg = conf(st), stamp = dmy(dstr(Date.now())) + ' ' + new Date(Date.now() + TZ).toISOString().slice(11, 16);
   Core.BENCHC.rate = st.benchRate != null ? st.benchRate : 25; Core.BENCHC.pay = st.benchPay || 'none';
   if (kind === 'napp' || kind === 'soliq') {
     if (!opt.force && exists('admin', kind, ref)) return null;
     const per = periodOf(kind, ref), out = kind === 'napp' ? await nappDoc(S, ref, cfg, stamp) : await soliqDoc(S, ref, cfg, stamp);
-    return store({ scope: 'admin', kind, ref, accId: '', uid: '', name: '', title: (kind === 'napp' ? 'NAPPga hisobot' : 'Soliq organiga hisob') + ' · ' + per.label }, out.buf);
+    return store({ scope: 'admin', kind, ref, accId: '', uid: '', name: '', title: opt.title || (kind === 'napp' ? 'NAPPga hisobot' : 'Soliq organiga hisob') + ' · ' + per.label }, out.buf);
   }
   const acc = S.accounts.filter(a => a.id === accId)[0]; if (!acc) throw new Error('Hisob topilmadi.');
   if (!opt.force && exists('client', kind, ref, accId)) return null;
   const per = periodOf(kind, ref), owner = acc.owner || acc.uid, out = await clientDoc(S, acc, kind, ref, cfg, stamp, owner);
-  return store({ scope: 'client', kind, ref, accId, uid: acc.uid, name: owner, title: { oylik: 'Oylik hisobot', chorak: 'Chorak hisoboti', yillik: 'Yillik hisobot va soliq ma’lumotnomasi' }[kind] + ' · ' + per.label }, out.buf);
+  return store({ scope: 'client', kind, ref, accId, uid: acc.uid, name: owner, title: opt.title || { oylik: 'Oylik hisobot', chorak: 'Chorak hisoboti', yillik: 'Yillik hisobot va soliq ma’lumotnomasi' }[kind] + ' · ' + per.label }, out.buf);
 }
 /* hisob shu davrda mavjud bo'lganmi (davr oxirigacha tranzaksiya bor) */
 const hadActivity = (S, accId, to) => S.tx.some(t => t.acc === accId && t.status === 'Bajarildi' && t.t <= endMs(to));
@@ -335,7 +359,15 @@ function listFor(user, accIds) {
   const all = db.all('reports').sort((a, b) => b.t - a.t);
   if (user.role === 'admin') return all;
   if (user.role === 'operator') return all.filter(r => r.scope === 'client');
-  return all.filter(r => r.scope === 'client' && accIds.indexOf(r.accId) >= 0);
+  return all.filter(r => r.scope === 'client' && r.status === 'approved' && accIds.indexOf(r.accId) >= 0);
 }
 function fileOf(rec) { return path.join(dir(), rec.file); }
-module.exports = { generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf };
+/* Tasdiqlash: shu hujjatning avvalgi tasdiqlangan versiyalari 'replaced' bo'ladi */
+function approve(id, by) {
+  const r = db.get('reports', id); if (!r) return null;
+  db.all('reports').filter(o => o.id !== r.id && o.status === 'approved' && o.scope === r.scope && o.kind === r.kind && o.ref === r.ref && (o.accId || '') === (r.accId || '')).forEach(o => { o.status = 'replaced'; db.put('reports', o); });
+  if (!r.tok) r.tok = crypto.randomBytes(12).toString('hex');
+  r.status = 'approved'; r.apprBy = by; r.apprT = Date.now(); db.put('reports', r); return r;
+}
+function unapprove(id, by) { const r = db.get('reports', id); if (!r) return null; r.status = 'draft'; r.apprBy = by; r.apprT = Date.now(); db.put('reports', r); return r; }
+module.exports = { approve, unapprove, generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf };
