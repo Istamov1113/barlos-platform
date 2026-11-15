@@ -27,6 +27,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/api/history/import', express.json({ limit: '40mb' }));
+app.use('/api/tx/import', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '300kb' }));
 app.use(express.text({ type: ['text/*'], limit: '50kb' }));
 app.use('/api', auth.middleware);
@@ -60,6 +61,9 @@ function loadS() {
   return { fx: st.fx, assets: db.all('assets'), accounts, tx: db.all('tx'), stoch: stochMap() };
 }
 const now = () => Date.now();
+/* Birja / broker / bank ro'yxati (admin qo'shadi). Aktivning `venue` maydoni shu nomlardan biri bo'ladi. */
+const VENUES0 = ['Bitget', 'Binance', 'IBKR', 'Jet.uz', 'Bank'];
+function venueList(st) { const set = new Set((st || settings()).venues || VENUES0); db.all('assets').forEach(a => { if (!a.archived) set.add(Core.venueOf(a)); }); return [...set]; }
 
 /* ---------------- Stoch RSI (1W): turlarning joriy maqsadi uchun ---------------- */
 const STOCH_G = ['kripto', 'xalqaro', 'milliy', 'metall'], MAIN_RE = { kripto: /^BTC/, xalqaro: /^SPY/, milliy: /^UZNF$/, metall: /^XAUT/ };
@@ -96,7 +100,7 @@ function AU(req, action, detail, who) {
   const u = req && req.user, ua = auth.parseUA(req && req.headers && req.headers['user-agent']);
   db.put('audit', { id: 'L' + (100000 + db.seq('log')), t: now(), ip: (req && req.ip) || '', dev: ua.dev, os: ua.os, br: ua.br, uid: u ? u.id : '', actor: who || (u ? (u.name || u.email) : '—'), email: u ? u.email : '', role: u ? u.role : '', action, detail: String(detail || '').slice(0, 600) });
 }
-const ACTIONS = [[/^\/reports\/generate$/, 'Hisobot tayyorladi'], [/^\/consent$/, 'Shartnoma bandlarini tasdiqladi'], [/^\/contract\/admin$/, 'Shartnoma bandlarini o‘zgartirdi'], [/^\/register$/, 'Ro‘yxatdan o‘tdi'], [/^\/login$/, 'Tizimga kirdi'], [/^\/verify$/, 'Emailni tasdiqladi'], [/^\/logout$/, 'Tizimdan chiqdi'], [/^\/reset$/, 'Parolni kod bilan tikladi'], [/^\/me$/, 'Profilni o‘zgartirdi'], [/^\/me\/password$/, 'Parolni o‘zgartirdi'],
+const ACTIONS = [[/^\/reports\/generate$/, 'Hisobot tayyorladi'], [/^\/reports\/approve$/, 'Hisobotni tasdiqladi'], [/^\/reports\/[^/]+\/regenerate$/, 'Hisobotni qayta yangiladi'], [/^\/reports\/[^/]+\/edit$/, 'Hisobotni tahrirladi'], [/^\/reports\/[^/]+\/delete$/, 'Hisobotni o‘chirdi'], [/^\/tx\/import$/, 'Tranzaksiyalarni import qildi'], [/^\/venues$/, 'Birja/broker/bank ro‘yxatini o‘zgartirdi'], [/^\/consent$/, 'Shartnoma bandlarini tasdiqladi'], [/^\/contract\/admin$/, 'Shartnoma bandlarini o‘zgartirdi'], [/^\/register$/, 'Ro‘yxatdan o‘tdi'], [/^\/login$/, 'Tizimga kirdi'], [/^\/verify$/, 'Emailni tasdiqladi'], [/^\/logout$/, 'Tizimdan chiqdi'], [/^\/reset$/, 'Parolni kod bilan tikladi'], [/^\/me$/, 'Profilni o‘zgartirdi'], [/^\/me\/password$/, 'Parolni o‘zgartirdi'],
   [/^\/sessions\/end$/, 'Seansni tugatdi'], [/^\/users\/[^/]+$/, 'Foydalanuvchini o‘zgartirdi'], [/^\/assets$/, 'Aktivni saqladi'], [/^\/accounts$/, 'Hisob ochdi'], [/^\/accounts\/[^/]+$/, 'Hisob sozlamasini o‘zgartirdi'],
   [/^\/tx$/, 'Tranzaksiya kiritdi'], [/^\/tx\/[^/]+\/void$/, 'Tranzaksiyani bekor qildi'], [/^\/tx\/[^/]+\/edit$/, 'Tranzaksiyani tahrirladi'], [/^\/transfers$/, 'Ichki o‘tkazma bajardi'],
   [/^\/wd$/, 'Yechish so‘rovi yubordi'], [/^\/wd\/[^/]+$/, 'Yechish so‘rovini ko‘rib chiqdi'], [/^\/dep$/, 'Depozit so‘rovi yaratdi'], [/^\/dep\/[^/]+\/(paid|cancel)$/, 'Depozit so‘rovini yangiladi'], [/^\/dep\/[^/]+$/, 'Depozit so‘rovini ko‘rib chiqdi'],
@@ -138,9 +142,11 @@ app.get('/api/consents', A, wrap((req, res) => {
 }));
 
 /* ---------------- Hisobotlar (PDF) ---------------- */
-const repPub = r => ({ id: r.id, scope: r.scope, kind: r.kind, ref: r.ref, accId: r.accId, name: r.name, title: r.title, size: r.size, t: r.t, ver: r.ver, hash: r.hash });
+const repPub = r => ({ id: r.id, scope: r.scope, kind: r.kind, ref: r.ref, accId: r.accId, name: r.name, title: r.title, size: r.size, t: r.t, ver: r.ver, hash: r.hash, status: r.status || 'draft', remark: r.remark || '', apprT: r.apprT || 0, apprBy: r.apprBy || '', tok: r.tok || '' });
+const repPubFor = (u) => r => { const o = repPub(r); if (u.role === 'client') { delete o.tok; delete o.apprBy; } return o; };
+function baseOf(req) { const st = settings(); if (!st.baseUrl && req) { const h = req.headers['x-forwarded-host'] || req.headers.host; if (h && !/^(127\.|localhost)/.test(h)) { st.baseUrl = (req.protocol || 'https') + '://' + h; db.put('settings', st); } } return st.baseUrl || process.env.BASE_URL || ''; }
 const myAccIds = u => db.all('accounts').filter(a => a.uid === u.id).map(a => a.id);
-app.get('/api/reports', ANY, wrap((req, res) => { res.json({ list: reports.listFor(req.user, myAccIds(req.user)).map(repPub).slice(0, 1000), conf: req.user.role === 'admin' ? reports.conf(settings()) : undefined }); }));
+app.get('/api/reports', ANY, wrap((req, res) => { res.json({ list: reports.listFor(req.user, myAccIds(req.user)).map(repPubFor(req.user)).slice(0, 1000), conf: req.user.role === 'admin' ? reports.conf(settings()) : undefined }); }));
 app.get('/api/reports/:id/pdf', ANY, wrap((req, res) => {
   const rec = db.get('reports', req.params.id); if (!rec) throw bad('Hujjat topilmadi.', 404);
   if (!reports.listFor(req.user, myAccIds(req.user)).some(r => r.id === rec.id)) throw bad('Bu hujjatni ko‘rishga ruxsat yo‘q.', 403);
@@ -153,16 +159,51 @@ app.post('/api/reports/generate', A, wrap(async (req, res) => {
   if (['oylik', 'chorak', 'yillik', 'napp', 'soliq'].indexOf(kind) < 0) throw bad('Hisobot turi noto‘g‘ri.');
   try { reports.periodOf(kind, ref); } catch (e) { throw bad('Davr noto‘g‘ri. Oylik: 2026-10, chorak: 2026-Q3, yillik: 2026.'); }
   const made = [];
-  if (kind === 'napp' || kind === 'soliq') made.push(await reports.generate(S, st, kind, ref, '', { force: true }));
-  else { const ids = b.acc ? [String(b.acc)] : S.accounts.filter(a => !a.archived && S.tx.some(t => t.acc === a.id)).map(a => a.id); for (const id of ids) made.push(await reports.generate(S, st, kind, ref, id, { force: true })); }
+  const base = baseOf(req);
+  if (kind === 'napp' || kind === 'soliq') made.push(await reports.generate(S, st, kind, ref, '', { force: true, base }));
+  else { const ids = b.acc ? [String(b.acc)] : S.accounts.filter(a => !a.archived && S.tx.some(t => t.acc === a.id)).map(a => a.id); for (const id of ids) made.push(await reports.generate(S, st, kind, ref, id, { force: true, base })); }
   res.json({ ok: true, made: made.filter(Boolean).map(repPub) });
 }));
+/* Tasdiqlash / qayta yangilash / tahrirlash (faqat admin). Mijozga faqat tasdiqlangan hujjatlar ko'rinadi. */
+function notifyAppr(r) { if (r.scope === 'client' && r.uid) db.put('alog', { id: 'G' + (100000 + db.seq('alog')), uid: r.uid, alert: 'rep', aid: '', sym: '', tf: '', t: now(), price: null, name: 'Hisobot', text: 'Yangi hisobot tayyor: ' + r.title + '. Hisobotlar sahifasidan PDF ni oching.', signal: '' }); }
+app.post('/api/reports/approve', A, wrap((req, res) => {
+  const ids = Array.isArray((req.body || {}).ids) ? req.body.ids.map(String).slice(0, 2000) : [], un = !!(req.body || {}).undo; let n = 0;
+  db.tx(() => ids.forEach(id => { const r = db.get('reports', id); if (!r) return; if (un) { if (r.status === 'approved') { reports.unapprove(id, req.user.email); n++; } } else if (r.status !== 'approved') { reports.approve(id, req.user.email); notifyAppr(r); n++; } }));
+  req.ad = (un ? 'tasdiq bekor: ' : 'tasdiqlandi: ') + ids.join(','); res.json({ ok: true, n });
+}));
+async function regen(req, rec, patch) {
+  const S = loadS(), st = settings(), opt = { force: true, base: baseOf(req), remark: patch.remark != null ? String(patch.remark).slice(0, 300) : (rec.remark || ''), title: patch.title ? String(patch.title).slice(0, 160) : rec.title };
+  const out = await reports.generate(S, st, rec.kind, rec.ref, rec.accId || '', opt); return out;
+}
+app.post('/api/reports/:id/regenerate', A, wrap(async (req, res) => {
+  const rec = db.get('reports', req.params.id); if (!rec) throw bad('Hujjat topilmadi.', 404);
+  const out = await regen(req, rec, {}); req.ad = rec.id + ' -> ' + out.id; res.json({ ok: true, made: repPub(out) });
+}));
+app.post('/api/reports/:id/edit', A, wrap(async (req, res) => {
+  const rec = db.get('reports', req.params.id); if (!rec) throw bad('Hujjat topilmadi.', 404);
+  const b = req.body || {}; if (!String(b.title || '').trim() && b.remark == null) throw bad('Sarlavha yoki izohni kiriting.');
+  const out = await regen(req, rec, { title: String(b.title || '').trim(), remark: b.remark }); req.ad = rec.id + ' tahrirlandi -> ' + out.id; res.json({ ok: true, made: repPub(out) });
+}));
+app.post('/api/reports/:id/delete', A, wrap((req, res) => {
+  const rec = db.get('reports', req.params.id); if (!rec) throw bad('Hujjat topilmadi.', 404);
+  if (rec.status === 'approved') throw bad('Tasdiqlangan hujjatni avval tasdiqdan oling.');
+  db.db.prepare("DELETE FROM docs WHERE coll='reports' AND id=?").run(rec.id); db.touch(); try { require('fs').unlinkSync(reports.fileOf(rec)); } catch (e) { /* yo'q */ } req.ad = rec.id; res.json({ ok: true });
+}));
+/* Ommaviy havola (QR): tokenni biladigan kishi tasdiqlangan hujjatni ochadi */
+app.get('/v/:tok', (req, res) => {
+  const tok = String(req.params.tok || ''), all = db.all('reports'); let rec = /^[a-f0-9]{16,64}$/.test(tok) ? all.filter(r => r.tok === tok)[0] : null;
+  /* hujjat yangilangan bo'lsa, eski QR ham eng so'nggi tasdiqlangan versiyani ochadi */
+  if (rec && rec.status === 'replaced') rec = all.filter(o => o.status === 'approved' && o.scope === rec.scope && o.kind === rec.kind && o.ref === rec.ref && (o.accId || '') === (rec.accId || ''))[0] || rec;
+  const f = rec && reports.fileOf(rec);
+  res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Robots-Tag', 'noindex');
+  if (!rec || rec.status !== 'approved' || !require('fs').existsSync(f)) return res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BARLOS</title><body style="font-family:sans-serif;max-width:480px;margin:12vh auto;padding:0 16px"><h2>Hujjat topilmadi</h2><p>Bu hujjat hali tasdiqlanmagan, yangilangan yoki mavjud emas. Iltimos, BARLOS ma’muriyatiga murojaat qiling.</p></body>');
+  res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'inline; filename="barlos-' + rec.kind + '-' + rec.ref + '.pdf"'); require('fs').createReadStream(f).pipe(res);
+});
 let repBusy = false;
 async function reportLoop() {
   if (repBusy) return; repBusy = true;
   try {
     const made = await reports.auto(loadS(), settings());
-    made.filter(r => r.scope === 'client').forEach(r => db.put('alog', { id: 'G' + (100000 + db.seq('alog')), uid: r.uid, alert: 'rep', aid: '', sym: '', tf: '', t: now(), price: null, name: 'Hisobot', text: 'Yangi hisobot tayyor: ' + r.title + '. Hisobotlar sahifasidan PDF ni oching.', signal: '' }));
     if (made.length) console.log('Hisobotlar tayyorlandi: ' + made.length);
   } catch (e) { console.error('hisobot:', e.message); } finally { repBusy = false; }
 }
@@ -233,7 +274,7 @@ app.get('/api/state', ANY, wrap((req, res) => {
   let dep = db.all('dep');
   if (!isStaff) { accounts = accounts.filter(a => a.uid === u.id); const ids = new Set(accounts.map(a => a.id)); tx = tx.filter(t => ids.has(t.acc) && t.status === 'Bajarildi').map(t => { const c = Object.assign({}, t); delete c.edits; delete c.voidReason; return c; }); wd = wd.filter(w => ids.has(w.acc)); dep = dep.filter(w => ids.has(w.acc)); }
   const sessions = sessionsOf(u.id).map(s => Object.assign(s, { cur: s.id === req.sid }));
-  const out = { rev: db.rev(), me: Object.assign(pubUser(u), { sessions, consent: { ok: isStaff || contract.ok(u.id), ver: contract.doc().ver, t: ((db.get('consent', u.id + ':' + contract.doc().ver) || {}).t) || 0 } }), settings: { fx: st.fx, fxT: st.fxT, nBase: st.nBase, nHold: st.nHold, nSell: st.nSell, pay: st.pay || [], benchRate: st.benchRate != null ? st.benchRate : 25, stoch: stochPar(st), mainAsset: Object.fromEntries(STOCH_G.map(g => { const a = mainAsset(g, st); return [g, a ? a.id : '']; })), benchPay: st.benchPay || 'none' },
+  const out = { rev: db.rev(), me: Object.assign(pubUser(u), { sessions, consent: { ok: isStaff || contract.ok(u.id), ver: contract.doc().ver, t: ((db.get('consent', u.id + ':' + contract.doc().ver) || {}).t) || 0 } }), settings: { venues: venueList(st), fx: st.fx, fxT: st.fxT, nBase: st.nBase, nHold: st.nHold, nSell: st.nSell, pay: st.pay || [], benchRate: st.benchRate != null ? st.benchRate : 25, stoch: stochPar(st), mainAsset: Object.fromEntries(STOCH_G.map(g => { const a = mainAsset(g, st); return [g, a ? a.id : '']; })), benchPay: st.benchPay || 'none' },
     stoch: stochMap(),
     assets: db.all('assets').map(a => Object.assign(isStaff ? a : { id: a.id, sym: a.sym, name: a.name, group: a.group, curr: a.curr, price: a.price, rate: a.rate, dpay: a.dpay, dcap: a.dcap, dstart: a.dstart, target: a.target, archived: a.archived, venue: a.venue }, { isin: a.isin || isinOf(a), issuer: a.issuer || '' })),
     accounts, tx, wd, dep };
@@ -282,6 +323,44 @@ app.post('/api/users/:id', A, wrap((req, res) => {
 
 /* ---------------- Aktivlar (katalog) ---------------- */
 const CURRS = ['UZS', 'USD'];
+app.post('/api/venues', A, wrap((req, res) => {
+  const b = req.body || {}, st = settings(), list = (st.venues || VENUES0).slice(), name = String(b.add || b.remove || '').trim().slice(0, 30);
+  if (!name) throw bad('Nomni kiriting.');
+  if (b.add) { if (list.some(v => v.toLowerCase() === name.toLowerCase())) throw bad('Bu nom allaqachon bor.'); list.push(name); }
+  else { if (db.all('assets').some(a => Core.venueOf(a) === name)) throw bad('Bu joyda aktivlar bor. Avval aktivlarning “Birja/joy” maydonini o‘zgartiring.'); const i = list.indexOf(name); if (i < 0) throw bad('Topilmadi.', 404); list.splice(i, 1); }
+  st.venues = list; db.put('settings', st); req.ad = (b.add ? 'qo‘shildi: ' : 'olib tashlandi: ') + name; res.json({ ok: true, venues: venueList(st) });
+}));
+/* Ommaviy import: tranzaksiyalar ro'yxati (JSON qatorlar). dry=true: faqat tekshiradi. Xato bo'lsa hech narsa yozilmaydi. */
+const TMAP = { buy: 'BUY', sotib: 'BUY', 'sotib olish': 'BUY', xarid: 'BUY', sell: 'SELL', sotish: 'SELL', sotuv: 'SELL', deposit: 'DEPOZIT', depozit: 'DEPOZIT', kirim: 'DEPOZIT', withdraw: 'WITHDRAW', yechish: 'WITHDRAW', chiqim: 'WITHDRAW', dividend: 'DIVIDEND', foiz: 'FOIZ', kupon: 'KUPON', transfer: 'TRANSFER', 'o‘tkazma': 'TRANSFER' };
+function parseDate(v) { if (typeof v === 'number' && v > 1e11) return v; const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(String(v).trim()) || (() => { const d = /^(\d{2})[./](\d{2})[./](\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(String(v).trim()); return d ? [0, d[3], d[2], d[1], d[4], d[5]] : null; })(); if (!m) return NaN; return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 12), +(m[5] || 0)) - 5 * 3600e3; }
+app.post('/api/tx/import', A, wrap((req, res) => {
+  const b = req.body || {}, rows = Array.isArray(b.rows) ? b.rows.slice(0, 5000) : []; if (!rows.length) throw bad('Qatorlar yo‘q.');
+  const errs = [], okRows = []; let made = 0;
+  const run = () => {
+    const S = loadS(), key = x => String(x == null ? '' : x).trim().toLowerCase(), accBy = {}, asBy = {};
+    S.accounts.forEach(a => { [a.id, a.owner, a.name, a.owner + ' · ' + a.name].forEach(k => { accBy[key(k)] = accBy[key(k)] || a; }); });
+    db.db.prepare('SELECT id,email FROM users').all().forEach(u => { const a = S.accounts.filter(x => x.uid === u.id)[0]; if (a) accBy[key(u.email)] = a; });
+    S.assets.forEach(a => { asBy[key(a.sym)] = a; asBy[key(a.id)] = a; });
+    const list = rows.map((r, i) => ({ r, i: i + 2 })).map(o => { const t = parseDate(o.r.date); return Object.assign(o, { t }); });
+    list.sort((a, b2) => (isNaN(a.t) ? 0 : a.t) - (isNaN(b2.t) ? 0 : b2.t) || a.i - b2.i);
+    list.forEach(o => {
+      const r = o.r;
+      try {
+        const type = TMAP[key(r.type)]; if (!type) throw new Error('Tur noto‘g‘ri: ' + r.type);
+        if (isNaN(o.t)) throw new Error('Sana noto‘g‘ri: ' + r.date);
+        const acc = accBy[key(r.account)]; if (!acc) throw new Error('Mijoz/hisob topilmadi: ' + r.account);
+        const x = asBy[key(r.asset)]; if (!x) throw new Error('Aktiv topilmadi: ' + r.asset);
+        const inp = { acc: acc.id, aid: x.id, type, t: o.t, price: r.price === '' ? undefined : r.price, amount: r.amount, fee: r.fee === '' ? undefined : r.fee, feeAsset: r.feeAsset, ex: r.venue || undefined, note: (r.note || '') + (r.note ? ' ' : '') + '[import]', cash: r.cash === false || key(r.cash) === 'no' || key(r.cash) === 'yo‘q' ? false : undefined };
+        if (type === 'TRANSFER') { const to = asBy[key(r.to)]; if (!to) throw new Error('Qabul qiluvchi aktiv topilmadi: ' + r.to); inp.to = to.id; inp.toAmount = r.toAmount; }
+        const rec = writeTx(S, inp, 'Admin', 'Import', null, {}); made++; okRows.push(rec.id);
+      } catch (e) { errs.push({ row: o.i, error: e.message }); }
+    });
+    if (errs.length || b.dry) { const e = new Error('rollback'); e.rollback = true; throw e; }
+  };
+  try { db.tx(run); } catch (e) { if (!e.rollback) throw e; }
+  if (errs.length) return res.status(400).json({ error: errs.length + ' ta qatorda xato. Hech narsa yozilmadi.', errors: errs.slice(0, 100), ok: made });
+  req.ad = b.dry ? '' : 'import: ' + made + ' ta'; res.json({ ok: true, dry: !!b.dry, count: made });
+}));
 app.post('/api/assets', A, wrap((req, res) => {
   const b = req.body || {}, cur = b.id ? db.get('assets', b.id) : null;
   if (b.id && !cur) throw bad('Aktiv topilmadi.', 404);

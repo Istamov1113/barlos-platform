@@ -345,6 +345,38 @@ const srv = app.listen(0, async () => {
       if (Lc.j.list.length) { pdf = await raw(cl2, Lc.j.list[0].id); ok(pdf.s === 200 && pdf.b.slice(0, 5).toString() === '%PDF-', 'mijoz o‘z PDF sini ocha oladi'); require('fs').writeFileSync(process.env.REP_OUT ? process.env.REP_OUT + '/client-' + Lc.j.list[0].kind + '.pdf' : '/dev/null', pdf.b); }
       const nb = (await adm('GET', '/api/reports')).j.list.length; r = await adm('POST', '/api/reports/generate', { kind: 'napp', ref: qq }); const na = (await adm('GET', '/api/reports')).j.list.length; ok(na === nb + 1, 'qayta tayyorlash yangi versiya qo‘shadi, eskisi o‘chmaydi');
       const made = await require('../server.js').reportLoop(); const na2 = (await adm('GET', '/api/reports')).j.list.length; ok(na2 >= na, 'avtomatik tsikl xatosiz ishladi');
+      /* tasdiqlash, QR havola, regenerate/edit */
+      const Lall = (await adm('GET', '/api/reports')).j.list, cr2acc = (await cl2('GET', '/api/state')).j.accounts.map(a => a.id), cr = Lall.filter(x => x.scope === 'client' && x.status === 'draft' && cr2acc.indexOf(x.accId) >= 0)[0] || Lall.filter(x => x.scope === 'client' && x.status === 'draft')[0];
+      ok(!!cr && !!cr.tok, 'yangi hisobot qoralama holatida va tokenli');
+      const owner = []; for (const c of [cl, cl2, cl3, cl4]) { const m = await c('GET', '/api/state'); if (m.s === 200 && m.j.me.role === 'client') owner.push(c); } let seen = 0; for (const c of owner) { const lc = await c('GET', '/api/reports'); if (lc.s === 200 && lc.j.list.some(x => x.id === cr.id)) seen++; }
+      ok(seen === 0, 'tasdiqlanmagan hisobot mijozga ko‘rinmaydi');
+      let pv = await fetch(base + '/v/' + cr.tok); ok(pv.status === 404, 'tasdiqlanmagan hujjat ommaviy havolada ochilmaydi');
+      r = await cl2('POST', '/api/reports/approve', { ids: [cr.id] }); ok(r.s === 403, 'mijoz tasdiqlay olmaydi');
+      r = await adm('POST', '/api/reports/approve', { ids: [cr.id] }); ok(r.s === 200 && r.j.n === 1, 'admin tasdiqladi');
+      pv = await fetch(base + '/v/' + cr.tok); const pb = Buffer.from(await pv.arrayBuffer()); ok(pv.status === 200 && pb.slice(0, 5).toString() === '%PDF-', 'QR havola tasdiqlangan PDF ni ochadi');
+      let seen2 = 0; for (const c of owner) { const lc = await c('GET', '/api/reports'); if (lc.s === 200 && lc.j.list.some(x => x.id === cr.id)) { seen2++; ok(!lc.j.list[0].tok, 'mijozga token berilmaydi'); } } ok(seen2 === 1, 'tasdiqlangach egasiga ko‘rinadi');
+      r = await adm('POST', '/api/reports/' + cr.id + '/edit', { title: 'Tahrirlangan sarlavha', remark: 'Sinov izohi' }); ok(r.s === 200 && r.j.made.title === 'Tahrirlangan sarlavha' && r.j.made.status === 'draft' && r.j.made.ver > cr.ver, 'tahrirlash yangi qoralama versiya yaratadi');
+      r = await adm('POST', '/api/reports/' + cr.id + '/regenerate', {}); ok(r.s === 200 && r.j.made.id !== cr.id, 'qayta yangilash');
+      const nid = r.j.made.id; await adm('POST', '/api/reports/approve', { ids: [nid] }); pv = await fetch(base + '/v/' + cr.tok); ok(pv.status === 200, 'yangi versiya tasdiqlansa ham eski havola o‘z holatida');
+      r = await adm('POST', '/api/reports/approve', { ids: [nid], undo: true }); ok(r.s === 200, 'tasdiqni olish'); pv = await fetch(base + '/v/' + cr.tok); ok(pv.status === 404, 'tasdiq olingach havola yopiladi');
+      r = await adm('POST', '/api/reports/' + nid + '/delete', {}); ok(r.s === 200, 'tasdiqi olingan qoralamani o‘chirish mumkin');
+      /* ledger: qoldiqlar pozitsiya bilan mos, har yozuv muvozanatda */
+      const stL = (await adm('GET', '/api/state')).j, CoreL = require('../public/core.js'), SL = { fx: stL.settings.fx, assets: stL.assets, accounts: stL.accounts, tx: stL.tx };
+      stL.accounts.forEach(ac => { const lg = CoreL.ledger(SL, ac.id), pos = CoreL.position(SL, ac.id), sum = {};
+        Object.keys(lg.bal).forEach(k => { const a = k.split('|')[1]; sum[a] = (sum[a] || 0) + lg.bal[k]; });
+        Object.keys(pos.q).forEach(a => { ok(Math.abs((sum[a] || 0) - pos.q[a]) < 1e-6, 'ledger qoldig‘i pozitsiyaga teng: ' + ac.id + ' ' + a + ' ' + (sum[a] || 0) + ' vs ' + pos.q[a]); });
+        lg.entries.forEach(e => { let d = 0, c = 0; e.lines.forEach(l => { if (l.side === 'D') d += l.uzs; else c += l.uzs; }); ok(Math.abs(d - c) < 0.01, 'yozuv muvozanatda: ' + e.tx); }); });
+      r = await adm('POST', '/api/venues', { add: 'Binance Test' }); ok(r.s === 200 && r.j.venues.indexOf('Binance Test') >= 0, 'yangi birja qo‘shildi');
+      r = await adm('POST', '/api/venues', { add: 'binance test' }); ok(r.s === 400, 'takroriy nom rad');
+      r = await cl2('POST', '/api/venues', { add: 'X' }); ok(r.s === 403, 'mijoz birja qo‘sha olmaydi');
+      r = await adm('POST', '/api/venues', { remove: 'Binance Test' }); ok(r.s === 200, 'birja olib tashlandi');
+      /* ommaviy import */
+      const accImp = stL.accounts[0].id, impRows = [{ date: '2025-01-05', account: accImp, asset: 'UZS', type: 'deposit', amount: 1000000, price: 1 }, { date: '05.01.2025 13:00', account: accImp, asset: 'UZNF', type: 'buy', amount: 10, price: 6600 }];
+      const nTx0 = (await adm('GET', '/api/state')).j.tx.length;
+      r = await adm('POST', '/api/tx/import', { rows: impRows, dry: true }); ok(r.s === 200 && r.j.dry && r.j.count === 2, 'import tekshiruvi: ' + JSON.stringify(r.j)); ok((await adm('GET', '/api/state')).j.tx.length === nTx0, 'dry-run hech narsa yozmaydi');
+      r = await adm('POST', '/api/tx/import', { rows: impRows.concat([{ date: '2025-01-06', account: 'yoq@yoq', asset: 'UZS', type: 'deposit', amount: 5, price: 1 }]) }); ok(r.s === 400 && r.j.errors.length === 1, 'xato qator bo‘lsa hammasi rad'); ok((await adm('GET', '/api/state')).j.tx.length === nTx0, 'xatoda hech narsa yozilmaydi');
+      r = await cl2('POST', '/api/tx/import', { rows: impRows }); ok(r.s === 403, 'mijoz import qila olmaydi');
+      r = await adm('POST', '/api/tx/import', { rows: impRows }); ok(r.s === 200 && r.j.count === 2, 'import bajarildi'); ok((await adm('GET', '/api/state')).j.tx.length === nTx0 + 2, 'import yozuvlari jurnalda');
       r = await adm('POST', '/api/settings', { rep: { co: { name: 'BARLOS MChJ', stir: '123456789' }, own: { charter: 5e9, retained: 2e8 }, rate: { mgmt: 1.5, custody: 0.05, success: 10, hurdle: 0, profitTax: 15, divTax: 5, vat: 12, minOwn: 5, limit: 40, days: 365 }, tax: { vatPayer: 'Tekshiring', vatExempt: 'Tekshiring' } } }); ok(r.s === 200, 'hisobot sozlamalari saqlandi');
       r = await adm('POST', '/api/settings', { rep: { rate: { mgmt: 500 } } }); ok(r.s === 400, 'noto‘g‘ri stavka rad etildi');
     }
