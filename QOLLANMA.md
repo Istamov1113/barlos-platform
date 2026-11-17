@@ -53,6 +53,22 @@ Server o'zi ham har 6 soatda `data/backups` papkasiga zaxira nusxa saqlab boradi
 2. Aktivlar → Tarixiy ma'lumotlar → "Barcha tarixni tozalash".
 3. Barcha uzse.uz fayllarini (nomida ISIN bor) bitta bo'lib shu bo'limdagi "Yuklash" orqali qayta yuklang. Har bir aktivning "Manba kodi"da ISIN bo'lishi shart.
 
+## 2.12.0: Buxgalteriya moduli (balans, moliyaviy natija, maosh, shartnomalar, Rahbar ulushi)
+
+**Admin menyusida yangi sahifa: Buxgalteriya.** Hamma hisobot sayt ma'lumotidan AVTOMATIK tuziladi, jurnal qo'lda tahrirlanmaydi (har safar qayta quriladi, yozuvlar faqat sabab bilan bekor qilinadi).
+
+- **Daromad**: mijoz hisoblaridan avtomatik. Boshqaruv haqi (oylik) va muvaffaqiyat haqi (chorak oxirida), stavkalar Hisobotlar sozlamalaridagi haq stavkalaridan olinadi.
+- **Xodimlar va Rahbar**: sayt orqali ro'yxatga olinadi (F.I.Sh., PINFL, oklad, qabul/bo'shash sanasi, bank hisobi, ixtiyoriy ravishda sayt foydalanuvchisiga bog'lanadi). Oklad tarixi saqlanadi. Maosh: JShDS 12%, INPS 0,1%, ijtimoiy to'lov 12% (Sozlamalardan o'zgaradi).
+- **Rahbar ulushi (standart 5%)**: alohida maxsus hisobraqam **5110-R** orqali. Har oy ulush hisoblanadi (6710-R), soliqlar ushlanadi, netto qism asosiy schyotdan 5110-R ga o'tkaziladi va Rahbarga faqat shu schyotdan to'lanadi. Baza: bonusgacha foyda yoki tushum. To'langan ulush qaytarib olinmaydi (high-water mark).
+- **Shartnomalar va to'lovlar**: shartnoma muddati bo'yicha har oyga teng xarajat (Dt 9220/9230, Kt 6010), to'lovlar reestri, qoldiq qarz.
+- **Ustav kapitali**: miqdor, to'langan ulush, aksiyadorlar, qoplash muddati. **Qonuniy minimum va NAPP talablarini alohida tasdiqlang.**
+- **Hisobotlar**: Balans (1-shakl), Moliyaviy natija (2-shakl), jurnal, aylanma vedomost, Excel va PDF. Oy tugagach oldingi oy hisoboti avtomatik PDF qilib saqlanadi (Hisobotlar sahifasida, turi "Buxgalteriya").
+- **Nazorat**: Aktiv = Passiv, debet = kredit, sof foyda = taqsimlanmagan foyda, 5110-R = 6710-R avtomatik tekshiriladi.
+- To'lov kuni (standart: keyingi oyning 10-kuni) o'tgach maosh, soliq va tushumlar avtomatik to'langan deb hisoblanadi (Sozlamalarda o'chirish mumkin).
+- Hisobvaraqlar kodlari UzNIF hisobotidagi xo'jalik yurituvchi subyektlar rejasiga mos (bank rejasi emas). **Kodlar, soliq stavkalari va imtiyozlarni bosh buxgalter tasdiqlasin.**
+- Namuna: `docs/buxgalteriya/BARLOS_buxgalteriya_moduli.xlsx` (formulali Excel model) va `docs/buxgalteriya/TAKLIF.md`.
+- Texnik: `src/accounting.js` (hisob-kitob), `public/pages4.js` (sahifa), API: `/api/acx/*`. Yangi ma'lumot to'plamlari: `acx`, `acx_emp`, `acx_con`, `acx_pay`, `acx_je`, `acx_snap`. Migratsiya talab qilinmaydi.
+
 ## 2.11.0: Hisobotlar+Hujjatlar birlashdi, aktiv oynasi, omonat signali, profil, chat
 
 **Yangilash:** `data/` va `.env` ga tegmang. `npm install`, so'ng serverni qayta ishga tushiring.

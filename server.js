@@ -14,6 +14,7 @@ const chat = require('./src/chat');
 const profile = require('./src/profile');
 const hist = require('./src/hist');
 const tabular = require('./src/tabular');
+const accounting = require('./src/accounting');
 const Core = require('./public/core.js');
 const Ind = require('./public/indicators.js');
 
@@ -101,7 +102,7 @@ const ACTIONS = [[/^\/reports\/generate$/, 'Hisobot tayyorladi'], [/^\/consent$/
   [/^\/tx$/, 'Tranzaksiya kiritdi'], [/^\/tx\/[^/]+\/void$/, 'Tranzaksiyani bekor qildi'], [/^\/tx\/[^/]+\/edit$/, 'Tranzaksiyani tahrirladi'], [/^\/transfers$/, 'Ichki o‘tkazma bajardi'],
   [/^\/wd$/, 'Yechish so‘rovi yubordi'], [/^\/wd\/[^/]+$/, 'Yechish so‘rovini ko‘rib chiqdi'], [/^\/dep$/, 'Depozit so‘rovi yaratdi'], [/^\/dep\/[^/]+\/(paid|cancel)$/, 'Depozit so‘rovini yangiladi'], [/^\/dep\/[^/]+$/, 'Depozit so‘rovini ko‘rib chiqdi'],
   [/^\/signals$/, 'Qo‘lda signal yubordi'], [/^\/orders\/[^/]+\/send$/, 'Orderni bozorga yubordi'], [/^\/orders\/[^/]+\/cancel$/, 'Orderni bekor qildi'], [/^\/settings$/, 'Sozlamalarni o‘zgartirdi'], [/^\/prices\/refresh$/, 'Narxlarni yangiladi'],
-  [/^\/bonds\/accept$/, 'Obligatsiya kuponi/so‘ndirishini yozdi'], [/^\/deposits\/accept$/, 'Omonat foizini yozdi'], [/^\/history\/import$/, 'Tarixiy ma‘lumot yukladi'], [/^\/history\/reset$/, 'Aktiv tarixini tozaladi'], [/^\/history\/sync$/, 'Tarixni havoladan yangiladi'], [/^\/me\/profile$/, 'Profilni yangiladi'], [/^\/me\/avatar$/, 'Profil rasmini o‘zgartirdi'], [/^\/chat\/create$/, 'Chat/kanal yaratdi'], [/^\/chat\/[^/]+\/members$/, 'Chat a’zolarini o‘zgartirdi'], [/^\/deposits\/accept-group$/, 'Omonat foizini barcha mijozlarga yozdi'], [/^\/alerts$/, 'Alert saqladi'], [/^\/alerts\/[^/]+\/(del|toggle)$/, 'Alertni o‘zgartirdi']];
+  [/^\/bonds\/accept$/, 'Obligatsiya kuponi/so‘ndirishini yozdi'], [/^\/deposits\/accept$/, 'Omonat foizini yozdi'], [/^\/history\/import$/, 'Tarixiy ma‘lumot yukladi'], [/^\/history\/reset$/, 'Aktiv tarixini tozaladi'], [/^\/history\/sync$/, 'Tarixni havoladan yangiladi'], [/^\/me\/profile$/, 'Profilni yangiladi'], [/^\/me\/avatar$/, 'Profil rasmini o‘zgartirdi'], [/^\/chat\/create$/, 'Chat/kanal yaratdi'], [/^\/chat\/[^/]+\/members$/, 'Chat a’zolarini o‘zgartirdi'], [/^\/deposits\/accept-group$/, 'Omonat foizini barcha mijozlarga yozdi'], [/^\/acx\/cfg$/, 'Buxgalteriya sozlamasini o‘zgartirdi'], [/^\/acx\/emp$/, 'Xodimni saqladi (buxgalteriya)'], [/^\/acx\/con$/, 'Shartnomani saqladi (buxgalteriya)'], [/^\/acx\/pay$/, 'Shartnoma to‘lovini kiritdi'], [/^\/acx\/pay\/[^/]+\/void$/, 'Shartnoma to‘lovini bekor qildi'], [/^\/acx\/je$/, 'Qo‘lda buxgalteriya yozuvini kiritdi'], [/^\/acx\/je\/[^/]+\/void$/, 'Buxgalteriya yozuvini bekor qildi'], [/^\/alerts$/, 'Alert saqladi'], [/^\/alerts\/[^/]+\/(del|toggle)$/, 'Alertni o‘zgartirdi']];
 app.use('/api', (req, res, next) => {
   if (req.method === 'GET') return next();
   const a = ACTIONS.filter(x => x[0].test(req.path))[0]; if (!a) return next();
@@ -161,6 +162,7 @@ let repBusy = false;
 async function reportLoop() {
   if (repBusy) return; repBusy = true;
   try {
+    try { const r = await accounting.auto(loadS(), settings()); if (r) console.log('Buxgalteriya hisoboti tayyorlandi: ' + r.title); } catch (e) { console.error('buxgalteriya:', e.message); }
     const made = await reports.auto(loadS(), settings());
     made.filter(r => r.scope === 'client').forEach(r => db.put('alog', { id: 'G' + (100000 + db.seq('alog')), uid: r.uid, alert: 'rep', aid: '', sym: '', tf: '', t: now(), price: null, name: 'Hisobot', text: 'Yangi hisobot tayyor: ' + r.title + '. Hisobotlar sahifasidan PDF ni oching.', signal: '' }));
     if (made.length) console.log('Hisobotlar tayyorlandi: ' + made.length);
@@ -948,6 +950,7 @@ function bondLoop() {
 
 chat.mount(app, { ANY, wrap, bad, AU });
 profile.mount(app, { ANY, wrap, bad, AU });
+accounting.mount(app, { A, wrap, bad, AU, loadS, settings });
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], maxAge: '5m' }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Topilmadi.' }));
 

@@ -338,4 +338,4 @@ function listFor(user, accIds) {
   return all.filter(r => r.scope === 'client' && accIds.indexOf(r.accId) >= 0);
 }
 function fileOf(rec) { return path.join(dir(), rec.file); }
-module.exports = { generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf };
+module.exports = { generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf, store, pdf: { newDoc, header, h2, note, table, kv, signLine, finish, nf, dmy } };

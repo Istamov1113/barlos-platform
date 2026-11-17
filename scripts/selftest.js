@@ -402,6 +402,40 @@ const srv = app.listen(0, async () => {
         dbm.db.prepare("DELETE FROM docs WHERE coll='cmsg' AND id=?").run(Ch.mid(dm, 2)); vr = Ch.verify(dm); ok(!vr.ok, 'o‘chirilgan xabar aniqlandi: ' + vr.why);
         const m3 = dbm.get('cmsg', Ch.mid(grp2, 1)); const keep = m3.sig; m3.sig = 'x'.repeat(32); dbm.put('cmsg', m3, true); ok(!Ch.verify(grp2).ok, 'imzo buzilishi aniqlandi'); m3.sig = keep; dbm.put('cmsg', m3, true);
         r = await cA('GET', '/api/chat/' + grp2 + '/verify'); ok(r.s === 200 && r.j.ok, 'verify API'); }
+    /* ---- Buxgalteriya (2.12.0) ---- */
+    { const Y = new Date().getFullYear(), T0 = new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
+      let r = await cl('GET', '/api/acx/report'); ok(r.s === 403, 'mijoz buxgalteriyani ko‘ra olmaydi');
+      r = await adm('POST', '/api/acx/cfg', { charter: { amount: 3000000000, date: Y + '-01-15', paidPct: 100, nominal: 10000, holders: [{ name: 'Aksiyador 1', pct: 60 }, { name: 'Aksiyador 2', pct: 40 }] }, mgr: { on: true, pct: 5, base: 'profit' } }); ok(r.s === 200, 'buxg. sozlama: ' + JSON.stringify(r.j));
+      r = await adm('POST', '/api/acx/cfg', { charter: { amount: 1000, holders: [{ name: 'A', pct: 50 }] } }); ok(r.s === 400, 'aksiyador ulushlari 100% bo‘lmasa rad');
+      r = await adm('POST', '/api/acx/emp', { name: 'Rahbar Test', role: 'rahbar', from: Y + '-01-01', salary: 25000000, position: 'Direktor' }); ok(r.s === 200, 'rahbar qo‘shildi: ' + JSON.stringify(r.j)); const rid = r.j.emp.id;
+      r = await adm('POST', '/api/acx/emp', { name: 'Ikkinchi Rahbar', role: 'rahbar', from: Y + '-02-01', salary: 1000000 }); ok(r.s === 400, 'ikkinchi Rahbar rad etildi');
+      r = await adm('POST', '/api/acx/emp', { name: 'Bosh Buxgalter', role: 'xodim', from: Y + '-01-01', salary: 15000000, pinfl: '12345' }); ok(r.s === 400, 'PINFL noto‘g‘ri rad');
+      r = await adm('POST', '/api/acx/emp', { name: 'Bosh Buxgalter', role: 'xodim', from: Y + '-01-01', salary: 15000000, pinfl: '12345678901234' }); ok(r.s === 200, 'xodim qo‘shildi');
+      r = await adm('POST', '/api/acx/emp', { id: rid, name: 'Rahbar Test', role: 'rahbar', from: Y + '-01-01', salary: 30000000 }); ok(r.s === 400, 'oklad o‘zgarishida sana talab qilinadi');
+      r = await adm('POST', '/api/acx/con', { code: 'SH-01', party: 'Ofis egasi', subject: 'Ijara', total: 120000000, start: Y + '-01-01', months: 12, acct: '9220' }); ok(r.s === 200, 'shartnoma qo‘shildi: ' + JSON.stringify(r.j));
+      r = await adm('POST', '/api/acx/con', { code: 'SH-01', party: 'Boshqa', total: 5 }); ok(r.s === 400, 'shartnoma kodi takrorlanmaydi');
+      r = await adm('POST', '/api/acx/pay', { con: 'SH-01', date: Y + '-01-25', amount: 10000000 }); ok(r.s === 200, 'to‘lov'); const pid = r.j.pay.id;
+      r = await adm('POST', '/api/acx/pay', { con: 'YO‘Q', date: Y + '-01-25', amount: 1 }); ok(r.s === 400, 'noma’lum shartnomaga to‘lov rad');
+      r = await adm('POST', '/api/acx/je', { date: Y + '-01-31', dt: '4010', kt: '9030', amt: 400000000, note: 'Test boshqaruv haqi' }); ok(r.s === 200, 'qo‘lda yozuv'); const jid = r.j.je.id;
+      r = await adm('POST', '/api/acx/je', { date: Y + '-01-31', dt: '9999', kt: '9030', amt: 1, note: 'xato' }); ok(r.s === 400, 'noma’lum hisobvaraq rad');
+      r = await adm('POST', '/api/acx/je', { date: Y + '-01-31', dt: '4010', kt: '9910', amt: 1, note: 'xato' }); ok(r.s === 400, '9910 qo‘lda ishlatilmaydi');
+      r = await adm('GET', '/api/acx/report?year=' + Y + '&upto=' + T0); ok(r.s === 200, 'buxg. hisobot: ' + r.s);
+      const R = r.j; ok(R.checks.every(c => c.ok), 'barcha nazoratlar o‘tdi: ' + JSON.stringify(R.checks.filter(c => !c.ok)));
+      const bl = {}; R.balans.forEach(b => { if (b.code) bl[b.code] = b; }); ok(Math.abs(bl['400'].end - bl['780'].end) < 1 && bl['400'].end > 0, 'balans: aktiv = passiv (' + bl['400'].end + ')');
+      ok(bl['410'].end === 3000000000, 'ustav kapitali balansda'); ok(R.charter.holders.length === 2, 'aksiyadorlar saqlandi');
+      const pr = R.payroll[0]; ok(pr && pr.gross === 40000000 && pr.jshds === 4800000 && pr.inps === 40000, 'maosh: JShDS 12%, INPS 0.1%: ' + JSON.stringify(pr && [pr.gross, pr.jshds, pr.inps]));
+      const m1 = R.mgr[0]; ok(m1 && m1.share > 0 && m1.share === Math.round(Math.max(0, m1.cum) * 0.05), 'Rahbar ulushi 5%: ' + JSON.stringify(m1));
+      const t5 = R.tb.filter(x => x.code === '5110-R')[0], t6 = R.tb.filter(x => x.code === '6710-R')[0]; ok(Math.abs(t5.close - t6.close) < 1 && t5.close >= 0, 'maxsus schyot 5110-R = Rahbar qarzi');
+      const cn = R.contracts[0]; ok(cn.total === 120000000 && cn.paid === 10000000 && cn.accrued >= 10000000, 'shartnoma hisoblandi: ' + JSON.stringify(cn));
+      ok(R.pnl.filter(x => x.code === '270')[0].res === R.summary.net, 'sof foyda 2-shakl bilan mos');
+      r = await adm('POST', '/api/acx/pay/' + pid + '/void', { reason: '' }); ok(r.s === 400, 'sababsiz bekor qilish rad');
+      r = await adm('POST', '/api/acx/pay/' + pid + '/void', { reason: 'xato kiritilgan' }); ok(r.s === 200, 'to‘lov bekor qilindi');
+      r = await adm('POST', '/api/acx/je/' + jid + '/void', { reason: 'sinov tugadi' }); ok(r.s === 200, 'yozuv bekor qilindi');
+      r = await adm('GET', '/api/acx/report?year=' + Y + '&upto=' + T0); ok(r.j.checks.every(c => c.ok) && r.j.contracts[0].paid === 0, 'bekor qilingach ham nazorat o‘tadi');
+      r = await adm('GET', '/api/acx/report?year=1999'); ok(r.s === 400, 'yil noto‘g‘ri');
+      const pf = await fetch(base + '/api/acx/pdf?year=' + Y + '&upto=' + T0 + '&kind=toliq', { headers: { cookie: adm.ck() } }); const pb = Buffer.from(await pf.arrayBuffer()); ok(pf.status === 200 && pb.slice(0, 4).toString() === '%PDF', 'buxg. PDF tayyor');
+      r = await adm('GET', '/api/acx/data'); ok(r.s === 200 && r.j.emps.length === 2 && r.j.pays.length === 1 && r.j.manual.length === 1, 'ma’lumotlar o‘chirilmagan');
+    }
   } catch (e) { fail++; console.log('ISTISNO', e); }
   console.log('Natija: ' + pass + ' o‘tdi, ' + fail + ' xato'); srv.close(); process.exit(fail ? 1 : 0);
 });
