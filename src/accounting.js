@@ -10,6 +10,7 @@
 const db = require('./db');
 const Core = require('../public/core.js');
 const reports = require('./reports');
+const quarters = require('./quarters');
 
 const TZ = 5 * 3600e3;
 const pad = n => String(n).padStart(2, '0');
@@ -110,7 +111,7 @@ function saveCfg(b) {
   if (Array.isArray(b.opening)) {
     c.opening = b.opening.slice(0, 200).map(o => { if (!PM[o.code]) throw bad('Boshlang‘ich qoldiqda noma’lum hisobvaraq: ' + o.code); return { code: o.code, dt: Math.max(0, rd(+o.dt || 0)), kt: Math.max(0, rd(+o.kt || 0)) }; }).filter(o => o.dt || o.kt);
   }
-  db.put('acx', Object.assign({ id: 'cfg' }, c)); return c;
+  const raw = db.get('acx', 'cfg') || {}; db.put('acx', Object.assign({ id: 'cfg', feeStart: raw.feeStart || '' }, c)); return c;
 }
 
 /* ---------- Xodim, shartnoma, to'lov, qo'lda yozuvlar ---------- */
@@ -152,8 +153,8 @@ function engine(inp) {
   months.forEach(([y, m]) => {
     const k = ym(y, m), dm = mDate(y, m), r = rev[k] || { mgmt: 0, succ: 0, custody: 0 };
     const total = (cfg.rev.mgmt ? r.mgmt : 0) + (cfg.rev.succ ? r.succ : 0) + (cfg.rev.custody ? r.custody : 0);
-    add(dm, 'main', 'Daromad-' + k, 'Boshqaruv/muvaffaqiyat haqi hisoblandi (mijoz hisoblaridan)', '4010', '9030', total, 'daromad');
-    if (paid(y, m)) add(payDate(y, m), 'main', 'Tushum-' + k, 'Haq mijozlardan olindi', '5110', '4010', total, 'daromad');
+    add(dm, 'main', 'Daromad-' + k, 'Xizmat haqi hisoblandi (chorak yopilishi bo‘yicha)', '4010', '9030', total, 'daromad');
+    add(r.date || dm, 'main', 'Tushum-' + k, 'Xizmat haqi mijoz hisobidan chorak oxirida undirildi', '5110', '4010', total, 'daromad');
     /* ish haqi */
     const first = k + '-01', last = eom(y, m), rows = [];
     emps.forEach(e => { if (e.from > last || (e.to && e.to < first)) return; const g = salaryAt(e, last); if (!g) return; rows.push({ id: e.id, name: e.name, role: e.role, gross: g, jshds: rd(g * cfg.rates.jshds / 100), inps: rd(g * cfg.rates.inps / 100) }); });
@@ -193,24 +194,24 @@ function engine(inp) {
   if (cfg.mgr.on && boss && cfg.mgr.pct > 0) {
     const eff = e => (PM[e.kt] && PM[e.kt].type === 'Daromad' ? e.amt : 0) - (PM[e.dt] && PM[e.dt].type === 'Xarajat' ? e.amt : 0);
     const bm = {}; E.filter(e => e.grp === 'main').forEach(e => { const k = ymOf(e.d), b = bm[k] || (bm[k] = { profit: 0, revenue: 0 }); b.profit += eff(e); if (e.kt === '9030') b.revenue += e.amt; });
-    let cum = 0, prevS = 0;
+    let cum = 0, prevS = 0, qb = 0;
     months.forEach(([y, m]) => {
       const k = ym(y, m), dm = mDate(y, m); if (m === 1) { cum = 0; prevS = 0; }
-      const b = bm[k] || { profit: 0, revenue: 0 }, base = cfg.mgr.base === 'revenue' ? b.revenue : b.profit; cum += base;
-      const cs = rd(Math.max(0, cum) * cfg.mgr.pct / 100), F = Math.max(0, cs - prevS); prevS = Math.max(prevS, cs);   /* high-water mark: to‘langan ulush qaytarib olinmaydi */
-      const J = rd(F * cfg.rates.jshds / 100), I = rd(F * cfg.rates.inps / 100), Y = rd(F * cfg.rates.yait / 100), net = F - J - I, pd = paid(y, m);
-      mgrRows.push({ k, base, cum, share: F, jshds: J, inps: I, yait: Y, net, paid: pd });
+      const b = bm[k] || { profit: 0, revenue: 0 }, bs = cfg.mgr.base === 'revenue' ? b.revenue : b.profit; cum += bs; qb += bs;
+      if (m % 3 !== 0 || eom(y, m) > upto) return;                       /* Rahbar ulushi faqat CHORAK OXIRIDA hisoblanadi va shu kuni to‘lanadi */
+      const kq = y + '-Q' + (m / 3), cs = rd(Math.max(0, cum) * cfg.mgr.pct / 100), F = Math.max(0, cs - prevS); prevS = Math.max(prevS, cs);   /* high-water mark: to‘langan ulush qaytarib olinmaydi */
+      const J = rd(F * cfg.rates.jshds / 100), I = rd(F * cfg.rates.inps / 100), Y = rd(F * cfg.rates.yait / 100), net = F - J - I, pd = cfg.pay.auto && dm <= asOf;
+      const qbase = qb; qb = 0; mgrRows.push({ k: kq, base: qbase, cum, share: F, jshds: J, inps: I, yait: Y, net, paid: pd });
       if (!F) return;
-      add(dm, 'mgr', 'Rahbar-' + k, 'Rahbar ulushi hisoblandi (' + cfg.mgr.pct + '%)', '9220-R', '6710-R', F, 'rahbar');
-      add(dm, 'mgr', 'Rahbar-' + k, 'Ish beruvchi ijtimoiy to‘lovi (ulushdan)', '9220-R', '6520', Y, 'rahbar');
-      add(dm, 'mgr', 'Rahbar-' + k, 'JShDS ushlandi', '6710-R', '6410', J, 'rahbar');
-      add(dm, 'mgr', 'Rahbar-' + k, 'INPS ushlandi', '6710-R', '6520', I, 'rahbar');
-      add(dm, 'mgr', 'Rahbar-' + k, 'Netto ulush maxsus schyotga (5110-R) o‘tkazildi', '5110-R', '5110', net, 'rahbar');
+      add(dm, 'mgr', 'Rahbar-' + kq, 'Rahbar ulushi hisoblandi (' + cfg.mgr.pct + '%, chorak)', '9220-R', '6710-R', F, 'rahbar');
+      add(dm, 'mgr', 'Rahbar-' + kq, 'Ish beruvchi ijtimoiy to‘lovi (ulushdan)', '9220-R', '6520', Y, 'rahbar');
+      add(dm, 'mgr', 'Rahbar-' + kq, 'JShDS ushlandi', '6710-R', '6410', J, 'rahbar');
+      add(dm, 'mgr', 'Rahbar-' + kq, 'INPS ushlandi', '6710-R', '6520', I, 'rahbar');
+      add(dm, 'mgr', 'Rahbar-' + kq, 'Netto ulush maxsus schyotga (5110-R) o‘tkazildi', '5110-R', '5110', net, 'rahbar');
       if (pd) {
-        const pdt = payDate(y, m);
-        add(pdt, 'mgr', 'Rahbar-' + k, 'Ulush Rahbarga maxsus schyotdan to‘landi', '6710-R', '5110-R', net, 'rahbar');
-        add(pdt, 'mgr', 'Rahbar-' + k, 'JShDS byudjetga o‘tkazildi', '6410', '5110', J, 'rahbar');
-        add(pdt, 'mgr', 'Rahbar-' + k, 'Ijtimoiy to‘lov va INPS o‘tkazildi', '6520', '5110', I + Y, 'rahbar');
+        add(dm, 'mgr', 'Rahbar-' + kq, 'Ulush Rahbarga maxsus schyotdan to‘landi', '6710-R', '5110-R', net, 'rahbar');
+        add(dm, 'mgr', 'Rahbar-' + kq, 'JShDS byudjetga o‘tkazildi', '6410', '5110', J, 'rahbar');
+        add(dm, 'mgr', 'Rahbar-' + kq, 'Ijtimoiy to‘lov va INPS o‘tkazildi', '6520', '5110', I + Y, 'rahbar');
       }
     });
   }
@@ -293,31 +294,7 @@ function engine(inp) {
 }
 function ym(y, m) { return y + '-' + pad(m); }
 
-/* ---------- Platforma ma'lumotlaridan daromad (mijoz hisoblari bo'yicha) ---------- */
-let rcache = { rev: -1, t: 0, map: {} };
-function platformRevenue(S, st, cfg, startYm, upto, warn) {
-  const repCfg = reports.conf(st); Core.BENCHC.rate = st.benchRate != null ? st.benchRate : 25; Core.BENCHC.pay = st.benchPay || 'none';
-  const roles = {}; db.db.prepare('SELECT id,role FROM users').all().forEach(u => { roles[u.id] = u.role; });
-  const accs = S.accounts.filter(a => a.uid && roles[a.uid] === 'client');
-  const key = [startYm, upto, repCfg.rate.mgmt, repCfg.rate.success, repCfg.rate.hurdle, repCfg.rate.custody, repCfg.rate.days].join('|');
-  if (rcache.rev !== db.rev() || Date.now() - rcache.t > 600000) rcache = { rev: db.rev(), t: Date.now(), map: {} };
-  if (rcache.map[key]) return rcache.map[key];
-  const out = {}, uy = +upto.slice(0, 4), um = +upto.slice(5, 7); let errs = 0;
-  for (let y = +startYm.slice(0, 4), m = +startYm.slice(5, 7); y < uy || (y === uy && m <= um); [y, m] = addMonth(y, m, 1)) {
-    const k = ym(y, m), r = out[k] = { mgmt: 0, succ: 0, custody: 0 }, per = { from: k + '-01', to: minD(eom(y, m), upto), label: k };
-    const qEnd = m % 3 === 0 && eom(y, m) <= upto, perQ = qEnd ? reports.periodOf('chorak', y + '-Q' + (m / 3)) : null;
-    accs.forEach(a => {
-      if (!S.tx.some(t => t.acc === a.id && t.status === 'Bajarildi')) return;
-      try {
-        const x = reports.accountPeriod(S, a, per, repCfg, {}); r.mgmt += x.mgmt || 0; r.custody += x.custody || 0;
-        if (perQ) r.succ += reports.accountPeriod(S, a, perQ, repCfg, {}).succ || 0;
-      } catch (e) { errs++; }
-    });
-    r.mgmt = rd(r.mgmt); r.custody = rd(r.custody); r.succ = rd(r.succ);
-  }
-  if (errs && warn) warn.push('Daromadni hisoblashda ' + errs + ' ta hisob/davr o‘tkazib yuborildi.');
-  rcache.map[key] = out; return out;
-}
+/* ---------- Daromad: yopilgan choraklardagi HAQIQATDA undirilgan xizmat haqi ---------- */
 function aumAt(S, upto) {
   const roles = {}; db.db.prepare('SELECT id,role FROM users').all().forEach(u => { roles[u.id] = u.role; });
   let t = 0, n = 0; S.accounts.filter(a => a.uid && roles[a.uid] === 'client').forEach(a => { try { const v = reports.viewAt(S, a, upto, {}); if (v.T > 0) { t += v.T; n++; } } catch (e) { /* o'tkazildi */ } });
@@ -328,10 +305,9 @@ function build(S, st, year, upto) {
   const cfg = getCfg(), repCfg = reports.conf(st);
   if (!(cfg.charter.amount > 0) && repCfg.own && repCfg.own.charter > 0) cfg.charter = Object.assign({}, cfg.charter, { amount: repCfg.own.charter });
   const emps = coll('acx_emp'), cons = coll('acx_con'), pays = coll('acx_pay'), manual = coll('acx_je');
-  /* daromad hisoblashda boshlanish oyini aniqlash uchun dastlabki engine (daromadsiz) */
   const warn = [];
-  const probe = engine({ cfg, year, upto, emps, cons, pays, manual, revenue: {} });
-  const revenue = platformRevenue(S, st, cfg, probe.start, upto, warn);
+  const revenue = quarters.revenueByMonth();
+  const openQ = quarters.list(S, st).quarters.filter(q => !q.closed); if (openQ.length) warn.push('Yopilmagan chorak bor (' + openQ.map(q => q.label).join(', ') + '): ularning xizmat haqi daromadga hali kirmagan. “Chorakni yopish” ni bosing.');
   const out = engine({ cfg, year, upto, emps, cons, pays, manual, revenue });
   out.warnings = warn.concat(out.warnings);
   out.aum = aumAt(S, upto); out.rates = cfg.rates; out.revenueByMonth = revenue; out.feeRates = { mgmt: repCfg.rate.mgmt, success: repCfg.rate.success, hurdle: repCfg.rate.hurdle, custody: repCfg.rate.custody };
@@ -381,6 +357,18 @@ function mount(app, d) {
     const rep = run(req.query), kind = ['balans', 'natija', 'rahbar', 'toliq'].indexOf(req.query.kind) >= 0 ? req.query.kind : 'toliq';
     const buf = await pdfDoc(rep, kind, todayStr());
     res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'inline; filename="barlos-buxgalteriya-' + kind + '-' + rep.upto + '.pdf"'); res.send(buf);
+  }));
+  /* ---- chorak yopish: xizmat haqi ---- */
+  app.get('/api/acx/quarters', A, wrap((req, res) => res.json(quarters.list(d.loadS(), d.settings()))));
+  app.get('/api/acx/quarter/:key', A, wrap((req, res) => { if (!/^\d{4}-Q[1-4]$/.test(req.params.key)) throw B('Chorak noto‘g‘ri.'); res.json(quarters.preview(d.loadS(), d.settings(), req.params.key)); }));
+  app.post('/api/acx/quarter/:key/close', A, wrap((req, res) => {
+    const S = d.loadS(), st = d.settings(), by = 'Admin: ' + (req.user.name || req.user.email);
+    const rec = quarters.close(S, st, req.params.key, by, d.writeTx); req.ad = 'Chorak yopildi ' + rec.id + ' · undirildi ' + rec.charged; res.json({ ok: true, close: rec });
+  }));
+  app.post('/api/acx/feestart', A, wrap((req, res) => {
+    const k = String((req.body || {}).key || ''); if (!/^\d{4}-Q[1-4]$/.test(k)) throw B('Chorak YYYY-Qn ko‘rinishida bo‘lsin.');
+    if (db.all('acx_close').length) throw B('Choraklar yopila boshlagan: boshlanishni o‘zgartirib bo‘lmaydi.');
+    const c = db.get('acx', 'cfg') || { id: 'cfg' }; c.feeStart = k; db.put('acx', c); res.json({ ok: true });
   }));
   app.post('/api/acx/cfg', A, wrap((req, res) => res.json({ ok: true, cfg: saveCfg(req.body) })));
 
@@ -442,4 +430,11 @@ async function auto(S, st) {
   db.put('acx_snap', { id: k, t: Date.now(), report: r.id, net: rep.summary.net, assets: rep.summary.assets, ok: rep.checks.every(c => c.ok) }); return r;
 }
 
+/* hisobotlar moduli (reports.conf) uchun: ustav kapitali, foyda solig'i va Rahbar F.I.Sh. bitta joydan — Buxgalteriya sozlamalaridan */
+reports.confHook = c => {
+  const k = getCfg(), boss = coll('acx_emp').filter(e => e.role === 'rahbar').sort((a, b) => b.from.localeCompare(a.from))[0];
+  if (k.charter.amount > 0) c.own.charter = k.charter.amount;
+  c.rate.profitTax = k.rates.profit;
+  if (boss) c.co.head = boss.name;
+};
 module.exports = { mount, build, engine, getCfg, saveCfg, auto, PLAN, BAL, pdfDoc, DEF };

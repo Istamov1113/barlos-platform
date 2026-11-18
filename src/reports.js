@@ -28,7 +28,9 @@ const DEF = {
 };
 function conf(st) {
   const r = (st && st.rep) || {}, m = (a, b) => Object.assign({}, a, b || {});
-  return { co: m(DEF.co, r.co), own: m(DEF.own, r.own), rate: m(DEF.rate, r.rate), tax: m(DEF.tax, r.tax), f8: r.f8 || {} };
+  const c = { co: m(DEF.co, r.co), own: m(DEF.own, r.own), rate: m(DEF.rate, r.rate), tax: m(DEF.tax, r.tax), f8: r.f8 || {} };
+  if (module.exports.confHook) { try { module.exports.confHook(c); } catch (e) { /* ixtiyoriy */ } }   /* buxgalteriya: ustav kapitali, foyda solig'i, Rahbar F.I.Sh. — bitta joyda */
+  return c;
 }
 
 /* ---------- davrlar ---------- */
@@ -64,7 +66,7 @@ const toUzs = (S, x, amt, price) => amt * (price != null ? price : (x.price || 1
 function accountPeriod(S, acc, per, cfg, meta) {
   const open = viewAt(S, acc, addD(per.from, -1), meta), close = viewAt(S, acc, per.to, meta), T0 = endMs(addD(per.from, -1)), T1 = endMs(per.to);
   const am = Core.assetMap(S), inP = S.tx.filter(t => t.acc === acc.id && t.status === 'Bajarildi' && t.t > T0 && t.t <= T1).sort((a, b) => a.t - b.t);
-  const flows = [], r = { acc, per, open: open.T, close: close.T, openV: open, closeV: close, flows, dep: 0, wd: 0, div: 0, omInt: 0, coupon: 0, realized: 0, brokerage: 0, buys: 0, sells: 0, n: inP.length, est: 0 };
+  const flows = [], r = { acc, per, open: open.T, close: close.T, openV: open, closeV: close, flows, dep: 0, wd: 0, div: 0, omInt: 0, coupon: 0, realized: 0, brokerage: 0, buys: 0, sells: 0, fees: 0, n: inP.length, est: 0 };
   inP.forEach(t => {
     const x = am[t.aid]; if (!x) return; const fx = Core.fxOf(S, x.curr);
     if (t.type === 'DEPOZIT') { flows.push({ t: t.t, uzs: t.uzs || 0 }); r.dep += t.uzs || 0; }
@@ -72,6 +74,7 @@ function accountPeriod(S, acc, per, cfg, meta) {
     else if (t.type === 'DIVIDEND') r.div += t.amount * fx * (x.price || 1);
     else if (t.type === 'FOIZ') r.omInt += t.amount * fx * (x.price || 1);
     else if (t.type === 'KUPON') r.coupon += t.amount * fx;
+    else if (t.type === 'FEE') r.fees += t.amount * fx * (x.price || 1);       /* chorak oxirida undirilgan xizmat haqi */
     else if (t.type === 'SELL') {
       const pre = Core.position(Object.assign({}, S, { tx: S.tx.filter(q => q.acc === acc.id && q.status === 'Bajarildi' && q.t < t.t) }), acc.id).avg[x.id];
       if (pre != null) r.realized += (t.price - pre) * t.amount * fx; r.sells += t.amount * t.price * fx;
@@ -80,16 +83,16 @@ function accountPeriod(S, acc, per, cfg, meta) {
   });
   const days = dnum(per.to) - dnum(per.from) + 1, net = r.dep - r.wd, income = r.div + r.omInt + r.coupon;
   r.days = days; r.net = net; r.income = income;
-  r.unreal = r.close - r.open - net - income - r.realized + r.brokerage;      /* qayta baholash natijasi: qolgan farq */
+  r.unreal = r.close - r.open - net - income - r.realized + r.brokerage + r.fees;   /* undirilgan xizmat haqi qayta baholash emas */      /* qayta baholash natijasi: qolgan farq */
   r.gain = r.close - r.open - net;                                          /* kiritish-yechishsiz sof natija */
   let wcap = r.open; flows.forEach(f => { wcap += f.uzs * (T1 - f.t) / Math.max(1, T1 - T0); });
   r.wcap = wcap; r.dietz = wcap > 0 ? r.gain / wcap : 0;
   r.bench = (Core.BENCHC.rate || 0) / 100 * days / cfg.rate.days;
   r.gross = wcap > 0 ? (income + r.realized + r.unreal) / wcap : 0;
   /* xarajatlar (F5) */
-  const nav = (r.open + r.close) / 2, y = cfg.rate.days;
+  const nav = (r.open + r.close + r.fees) / 2, y = cfg.rate.days;     /* haq undirilishidan oldingi qiymat: haq yozilgach ham raqam o'zgarmaydi */
   r.nav = nav; r.mgmt = nav * cfg.rate.mgmt / 100 * days / y; r.custody = nav * cfg.rate.custody / 100 * days / y;
-  r.succBase = Math.max(0, r.gross - cfg.rate.hurdle / 100 * days / y) * nav; r.succ = r.succBase * cfg.rate.success / 100;
+  r.excess = (r.gross - cfg.rate.hurdle / 100 * days / y) * nav; r.succBase = Math.max(0, r.excess); r.succ = r.succBase * cfg.rate.success / 100;
   r.costs = r.mgmt + r.succ + r.custody + r.brokerage; r.costPct = nav > 0 ? r.costs / nav : 0; r.costYear = r.days > 0 ? r.costPct * y / r.days : 0;
   r.dropped = r.open > 0 && (r.open - r.close) / r.open > 0.10;
   return r;
@@ -338,4 +341,4 @@ function listFor(user, accIds) {
   return all.filter(r => r.scope === 'client' && accIds.indexOf(r.accId) >= 0);
 }
 function fileOf(rec) { return path.join(dir(), rec.file); }
-module.exports = { generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf, store, pdf: { newDoc, header, h2, note, table, kv, signLine, finish, nf, dmy } };
+module.exports = { endMs, generate, auto, listFor, fileOf, periodOf, prevMonth, prevQuarter, conf, DEF, accountPeriod, viewAt, nf, store, pdf: { newDoc, header, h2, note, table, kv, signLine, finish, nf, dmy } };

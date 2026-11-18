@@ -435,6 +435,31 @@ const srv = app.listen(0, async () => {
       r = await adm('GET', '/api/acx/report?year=1999'); ok(r.s === 400, 'yil noto‘g‘ri');
       const pf = await fetch(base + '/api/acx/pdf?year=' + Y + '&upto=' + T0 + '&kind=toliq', { headers: { cookie: adm.ck() } }); const pb = Buffer.from(await pf.arrayBuffer()); ok(pf.status === 200 && pb.slice(0, 4).toString() === '%PDF', 'buxg. PDF tayyor');
       r = await adm('GET', '/api/acx/data'); ok(r.s === 200 && r.j.emps.length === 2 && r.j.pays.length === 1 && r.j.manual.length === 1, 'ma’lumotlar o‘chirilmagan');
+      /* ---- Chorak yopish: xizmat haqi avtomatik undiriladi (2.13.0) ---- */
+      { const Cc = require('../public/core.js'), Q = require('../src/quarters'), RP = require('../src/reports'), stt = (await adm('GET', '/api/state')).j, uz = stt.assets.filter(a => a.sym === 'UZS')[0].id, aq = (await cl4('GET', '/api/state')).j.accounts[0].id;
+        const pk = Q.prevKey(Q.qOfDate(T0)), pper = RP.periodOf('chorak', pk), cur = Q.qOfDate(T0);
+        r = await cl('GET', '/api/acx/quarters'); ok(r.s === 403, 'mijoz chorak yopa olmaydi');
+        r = await adm('POST', '/api/tx', { acc: aq, aid: uz, type: 'DEPOZIT', amount: 100000000, price: 1, t: RP.endMs(pper.from) - 12 * 3600e3 }); ok(r.s === 200, 'o‘tgan chorakka depozit: ' + JSON.stringify(r.j));
+        r = await adm('GET', '/api/acx/quarters'); ok(r.s === 200 && r.j.next === pk && r.j.quarters.length >= 1, 'yopiladigan chorak topildi: ' + JSON.stringify(r.j));
+        r = await adm('GET', '/api/acx/quarter/' + pk); const row = r.j.rows.filter(x => x.accId === aq)[0]; ok(r.s === 200 && row && row.mgmt > 0 && row.due > 0 && !r.j.closed, 'oldindan ko‘rish: haq hisoblandi ' + JSON.stringify(row));
+        ok(row.mgmt > 0 && row.mgmt < row.nav * 0.015, 'boshqaruv haqi yillik 1.5% dan CHORAKKA mos (' + row.mgmt + ' / ' + row.nav + ')');
+        r = await adm('POST', '/api/acx/quarter/' + cur + '/close', {}); ok(r.s === 400, 'tugamagan chorakni yopib bo‘lmaydi');
+        r = await cl('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 403, 'mijoz chorak yopa olmaydi (POST)');
+        const stb = (await adm('GET', '/api/state')).j, bal0 = Cc.view({ fx: stb.fx, assets: stb.assets, accounts: stb.accounts, tx: stb.tx, now: Date.now() }, stb.accounts.filter(a => a.id === aq)[0]).T;
+        r = await adm('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 200 && r.j.close.charged > 0, 'chorak yopildi: ' + JSON.stringify(r.j.close && r.j.close.totals));
+        const cr = r.j.close, rowC = cr.rows.filter(x => x.accId === aq)[0];
+        r = await adm('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 400, 'chorak ikki marta yopilmaydi');
+        const st2 = (await adm('GET', '/api/state')).j, fee = st2.tx.filter(t => t.type === 'FEE' && t.acc === aq);
+        ok(fee.length === 1 && Math.abs(fee[0].amount - rowC.charged) < 0.01 && fee[0].t === RP.endMs(pper.to), 'mijoz hisobida “Xizmat haqi” yozuvi chorak oxiri sanasi bilan');
+        const bal1 = Cc.view({ fx: st2.fx, assets: st2.assets, accounts: st2.accounts, tx: st2.tx, now: Date.now() }, st2.accounts.filter(a => a.id === aq)[0]).T;
+        ok(Math.abs((bal0 - bal1) - rowC.charged) < 0.01, 'hisob qoldig‘i haq miqdoriga kamaydi');
+        const pq = st2.accounts.filter(a => a.id === aq)[0].prevQ; ok(typeof pq === 'number' && pq > 0 && pq <= 100000000, 'oldingi chorak balansi avtomatik: ' + pq);
+        r = await adm('GET', '/api/acx/quarters'); ok(r.j.quarters.filter(x => x.key === pk)[0].closed === true && r.j.next !== pk, 'chorak yopilgan deb belgilandi');
+        r = await adm('GET', '/api/acx/report?year=' + Y + '&upto=' + T0); const R2 = r.j; ok(R2.checks.every(c => c.ok), 'yopishdan keyin ham nazoratlar o‘tadi: ' + JSON.stringify(R2.checks.filter(c => !c.ok)));
+        const mk2 = pper.to.slice(0, 7); ok(R2.revenueByMonth[mk2] && Math.abs(R2.revenueByMonth[mk2].mgmt - cr.rev.mgmt) < 0.01 && cr.rev.mgmt > 0, 'daromad faqat haqiqatda undirilgan haqdan');
+        ok(R2.mgr.every(x => /^\d{4}-Q[1-4]$/.test(x.k)), 'Rahbar ulushi CHORAKLIK: ' + R2.mgr.map(x => x.k).join(','));
+        const j2 = R2.journal.filter(e => e.doc === 'Tushum-' + mk2)[0]; ok(j2 && j2.d === pper.to, 'haq chorak oxiri kuni daromadga kirdi');
+      }
     }
   } catch (e) { fail++; console.log('ISTISNO', e); }
   console.log('Natija: ' + pass + ' o‘tdi, ' + fail + ' xato'); srv.close(); process.exit(fail ? 1 : 0);

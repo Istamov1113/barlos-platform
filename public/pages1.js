@@ -218,17 +218,20 @@
     Object.keys(t).forEach(function (k) { delete ST.f['tg_' + k]; });
     return B.run(B.api('POST', '/api/accounts/' + id, { targets: merged }), 'Ulushlar saqlandi');
   };
+  /* Xizmat haqi: har chorak oxirida hisobdan AVTOMATIK undiriladi — qo'lda kiritiladigan narsa yo'q */
+  B.feeInfo = function (acc) {
+    var list = (D().tx || []).filter(function (t) { return t.acc === acc.id && t.type === 'FEE' && t.status === 'Bajarildi'; }).sort(function (a, b) { return b.t - a.t; });
+    return { list: list, last: list[0] || null, total: list.reduce(function (s, t) { return s + t.amount; }, 0) };
+  };
   function accSettings(acc) {
-    var s = summary(acc);
-    return '<section class="card stack"><h2>Hisob sozlamalari</h2><p class="sub">Xizmat haqi: har chorak foydasining 10%. Foyda = chorak oxiridagi balans − (chorak ichida kiritilgan pul + oldingi chorak oxiridagi balans).</p>' +
-      '<div class="stats"><div class="stat"><small>' + s.q.label + ' kiritilgan</small><b>' + money(s.q.inv) + '</b></div><div class="stat"><small>Oldingi chorak oxiri</small><b>' + money(s.q.prev) + '</b></div><div class="stat"><small>Joriy balans</small><b>' + money(s.T) + '</b></div><div class="stat"><small>Chorak foydasi</small><b>' + money(s.q.profit) + '</b></div><div class="stat"><small>Xizmat haqi (10%)</small><b>' + money(s.q.fee) + '</b></div></div>' +
-      '<div class="form-grid">' + fld('Oldingi chorak oxiridagi balans (so‘m)', '<input type="number" min="0" data-bind="prevQ_' + acc.id + '" value="' + esc(ST.f['prevQ_' + acc.id] != null ? ST.f['prevQ_' + acc.id] : (acc.prevQ || 0)) + '">') + '</div>' +
-      '<div class="row"><button class="btn" data-act="saveprevq" data-v="' + acc.id + '">Saqlash</button></div></section>';
+    var s = summary(acc), f = B.feeInfo(acc);
+    return '<section class="card stack"><h2>Xizmat haqi</h2><p class="sub">Xizmat haqi har chorak oxirida hisobdan avtomatik undiriladi. Qo‘lda hech narsa kiritish shart emas. Foyda = chorak oxiridagi balans − (chorak ichida kiritilgan pul + oldingi chorak oxiridagi balans).</p>' +
+      '<div class="stats"><div class="stat"><small>' + s.q.label + ' kiritilgan</small><b>' + money(s.q.inv) + '</b></div><div class="stat"><small>Oldingi chorak oxiri (avto)</small><b>' + money(s.q.prev) + '</b></div><div class="stat"><small>Joriy balans</small><b>' + money(s.T) + '</b></div><div class="stat"><small>Chorak foydasi</small><b class="' + (s.q.profit >= 0 ? 'good' : 'bad') + '">' + money(s.q.profit) + '</b></div><div class="stat"><small>Jami undirilgan haq</small><b>' + money(f.total) + '</b></div></div>' +
+      (f.list.length ? '<div class="tw"><table><thead><tr><th>Sana</th><th>Izoh</th><th class="n">Summa</th></tr></thead><tbody>' + f.list.slice(0, 8).map(function (t) { return '<tr><td>' + fdt(t.t) + '</td><td>' + esc(t.note || 'Xizmat haqi') + '</td><td class="n">' + money(t.amount) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="muted">Hali xizmat haqi undirilmagan — birinchi chorak yopilgach shu yerda ko‘rinadi.</p>') + '</section>';
   }
-  B.acts.saveprevq = function (el) { var id = el.getAttribute('data-v'); var v = ST.f['prevQ_' + id]; return B.run(B.api('POST', '/api/accounts/' + id, { prevQ: v }), 'Saqlandi'); };
 
   /* ----- tranzaksiyalar ----- */
-  var TLAB = { BUY: 'Xarid', SELL: 'Sotish', DEPOZIT: 'Kiritish', WITHDRAW: 'Yechish', FOIZ: 'Foiz', DIVIDEND: 'Dividend', KUPON: 'Kupon', TRANSFER: 'O‘tkazma' };
+  var TLAB = { BUY: 'Xarid', SELL: 'Sotish', DEPOZIT: 'Kiritish', WITHDRAW: 'Yechish', FOIZ: 'Foiz', DIVIDEND: 'Dividend', KUPON: 'Kupon', TRANSFER: 'O‘tkazma', FEE: 'Xizmat haqi' };
   B.TLAB = TLAB;
   function txRow(t, am, showOwner, accOf) {
     var x = am[t.aid]; if (!x) return '';

@@ -33,8 +33,8 @@
   function tone(v) { return v > 0 ? 'good' : v < 0 ? 'bad' : ''; }
   function signed(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v)); }
 
-  var SIDE = { BUY: ['Sotib olish', 'in'], SELL: ['Sotish', 'out'], DEPOZIT: ['Kirim', 'in'], WITHDRAW: ['Chiqim', 'out'], TRANSFER: ['O‘tkazma', 'out'], DIVIDEND: ['Dividend', 'in'], FOIZ: ['Foiz', 'in'], KUPON: ['Kupon', 'in'] };
-  var TF = { all: ['Hammasi', null], trade: ['Savdo', ['BUY', 'SELL']], inc: ['Daromad', ['FOIZ', 'DIVIDEND', 'KUPON']], flow: ['Kirim/chiqim', ['DEPOZIT', 'WITHDRAW', 'TRANSFER']] };
+  var SIDE = { BUY: ['Sotib olish', 'in'], SELL: ['Sotish', 'out'], DEPOZIT: ['Kirim', 'in'], WITHDRAW: ['Chiqim', 'out'], TRANSFER: ['O‘tkazma', 'out'], DIVIDEND: ['Dividend', 'in'], FOIZ: ['Foiz', 'in'], KUPON: ['Kupon', 'in'], FEE: ['Xizmat haqi', 'out'] };
+  var TF = { all: ['Hammasi', null], trade: ['Savdo', ['BUY', 'SELL']], inc: ['Daromad', ['FOIZ', 'DIVIDEND', 'KUPON']], flow: ['Kirim/chiqim', ['DEPOZIT', 'WITHDRAW', 'TRANSFER', 'FEE']] };
   function pairOf(x) { var q = x.curr === 'UZS' ? 'UZS' : (x.group === 'kripto' || x.group === 'metall' ? 'USDT' : 'USD'); return x.group === 'omonat' || x.group === 'naqd' ? x.sym : x.sym + '/' + q; }
   /* Binance buyurtmalar tarixi ko'rinishidagi jadval */
   function txBook(accs, x, f) {

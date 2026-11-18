@@ -15,6 +15,7 @@ const profile = require('./src/profile');
 const hist = require('./src/hist');
 const tabular = require('./src/tabular');
 const accounting = require('./src/accounting');
+const quarters = require('./src/quarters');
 const Core = require('./public/core.js');
 const Ind = require('./public/indicators.js');
 
@@ -58,7 +59,9 @@ function loadS() {
   db.db.prepare('SELECT id,name,email FROM users').all().forEach(u => { users[u.id] = u; });
   const accounts = db.all('accounts').map(a => Object.assign(a, { owner: (users[a.uid] && (users[a.uid].name || users[a.uid].email)) || a.uid }));
   Core.SET.nBase = st.nBase; Core.SET.nHold = st.nHold; Core.SET.nSell = st.nSell; Core.BENCHC.rate = st.benchRate != null ? st.benchRate : 25; Core.BENCHC.pay = st.benchPay || 'none';
-  return { fx: st.fx, assets: db.all('assets'), accounts, tx: db.all('tx'), stoch: stochMap() };
+  const S = { fx: st.fx, assets: db.all('assets'), accounts, tx: db.all('tx'), stoch: stochMap() };
+  quarters.fillPrevQ(S);      /* oldingi chorak oxiridagi balans — avtomatik */
+  return S;
 }
 const now = () => Date.now();
 
@@ -232,6 +235,7 @@ app.get('/api/state', ANY, wrap((req, res) => {
   let accounts = db.all('accounts'), tx = db.all('tx'), wd = db.all('wd');
   const names = {}; db.db.prepare('SELECT id,name,email FROM users').all().forEach(x => { names[x.id] = x.name || x.email; });
   accounts.forEach(a => { a.owner = names[a.uid] || a.uid; });
+  quarters.fillPrevQ({ fx: st.fx, assets: db.all('assets'), accounts, tx });      /* oldingi chorak oxiridagi balans — avtomatik */
   let dep = db.all('dep');
   if (!isStaff) { accounts = accounts.filter(a => a.uid === u.id); const ids = new Set(accounts.map(a => a.id)); tx = tx.filter(t => ids.has(t.acc) && t.status === 'Bajarildi').map(t => { const c = Object.assign({}, t); delete c.edits; delete c.voidReason; return c; }); wd = wd.filter(w => ids.has(w.acc)); dep = dep.filter(w => ids.has(w.acc)); }
   const sessions = sessionsOf(u.id).map(s => Object.assign(s, { cur: s.id === req.sid }));
@@ -324,7 +328,6 @@ app.post('/api/accounts/:id', A, wrap((req, res) => {
   const a = db.get('accounts', req.params.id); if (!a) throw bad('Hisob topilmadi.', 404);
   const b = req.body || {};
   if (b.targets) { const t = {}; Object.keys(b.targets).forEach(k => { const v = b.targets[k]; if (v === '' || v == null) return; const n = +v; if (!(n >= 0 && n <= 100)) throw bad('Ulush 0–100 oralig‘ida bo‘lsin.'); t[k] = n; }); a.targets = t; }
-  if (b.prevQ !== undefined) a.prevQ = +b.prevQ || 0;
   if (b.archived !== undefined) a.archived = !!b.archived;
   db.put('accounts', a); res.json({ ok: true });
 }));
@@ -950,7 +953,7 @@ function bondLoop() {
 
 chat.mount(app, { ANY, wrap, bad, AU });
 profile.mount(app, { ANY, wrap, bad, AU });
-accounting.mount(app, { A, wrap, bad, AU, loadS, settings });
+accounting.mount(app, { A, wrap, bad, AU, loadS, settings, writeTx });
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], maxAge: '5m' }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Topilmadi.' }));
 
