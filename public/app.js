@@ -156,18 +156,19 @@ window.B = (function () {
   /* ---------- qobiq ---------- */
   function pageList() {
     var r = D.me.role;
-    if (r === 'admin') return [['bosh', 'Bosh sahifa', 'Bosh'], ['aktiv', 'Aktivlar', 'Aktiv'], ['chart', 'Chart', 'Chart'], ['amal', 'Amallar', 'Amallar'], ['savdo', 'Avto savdo', 'Savdo'], ['hisobot', 'Hisobotlar', 'Hisobot'], ['jurnal', 'Jurnal', 'Jurnal'], ['chat', 'Chat', 'Chat'], ['profil', 'Profil', 'Profil'], ['sozlama', 'Sozlamalar', 'Sozlama']];
+    if (r === 'admin') return [['bosh', 'Bosh sahifa', 'Bosh'], ['aktiv', 'Aktivlar', 'Aktiv'], ['chart', 'Chart', 'Chart'], ['amal', 'Amallar', 'Amallar'], ['savdo', 'Avto savdo', 'Savdo'], ['hisobot', 'Hisobotlar', 'Hisobot'], ['chat', 'Chat', 'Chat'], ['profil', 'Profil', 'Profil'], ['sozlama', 'Sozlamalar', 'Sozlama']];
     if (r === 'operator') return [['bosh', 'Bosh sahifa', 'Bosh'], ['chart', 'Chart', 'Chart'], ['amal', 'Amallar', 'Amallar'], ['savdo', 'Avto savdo', 'Savdo'], ['hisobot', 'Hisobotlar', 'Hisobot'], ['chat', 'Chat', 'Chat'], ['profil', 'Profil', 'Profil'], ['sozlama', 'Sozlamalar', 'Sozlama']];
     return [['bosh', 'Bosh sahifa', 'Bosh'], ['portfel', 'Portfel', 'Portfel'], ['chart', 'Chart', 'Chart'], ['tranz', 'Tranzaksiyalar', 'Tranz.'], ['hisobot', 'Hisobotlar', 'Hisobot'], ['chat', 'Chat', 'Chat'], ['funds', 'Mablag’lar', 'Pul'], ['profil', 'Profil', 'Profil'], ['sozlama', 'Sozlamalar', 'Sozlama']];
   }
   function titleOf(p) { var l = pageList().filter(function (x) { return x[0] === p; })[0]; return l ? l[1] : ''; }
   var SUBS = { amal: 'Yangi amal, bitimlar ro‘yxati, kiritish va yechish so‘rovlari', chat: 'Shaxsiy yozishma, guruh, kanal va muhokama', hisobot: 'PDF hisobotlar, hujjatlar va jadval hisobotlari', chart: 'Aktivlar narxi, indikatorlar va chizish asboblari', bosh: 'Hisob holati va aktivlar ulushi', portfel: 'Aktivlar, statuslar va maqsadli ulushlar', tranz: 'Har bir bitimning miqdori, narxi va vaqti', savdo: 'TradingView signalidan bitimgacha', profil: 'Egasi haqida ma’lumot va sozlamalar', funds: 'Depozit, yechish va ichki o‘tkazmalar', sozlama: 'Til va tizim ko’rinishi', aktiv: 'Aktivlar katalogi va narx manbalari', hujjat: 'Avtomatik tayyorlangan PDF hisobotlar va shartnoma', jurnal: 'Barcha harakatlar: vaqt, IP, qurilma, foydalanuvchi', buxgalteriya: 'Balans, moliyaviy natija, maosh, shartnomalar va Rahbar ulushi: sayt ma’lumotidan avtomatik' };
   function shell() {
+    if (B.isAdmin() && ST.page === 'jurnal') { ST.sozTab = 'jurnal'; ST.page = 'sozlama'; }
+    if (B.isAdmin() && ST.page === 'buxgalteriya') { ST.hbTab = 'bux'; ST.page = 'hisobot'; }
+    if (B.isStaff() && (ST.page === 'tranz' || ST.page === 'funds')) { ST.amTab = ST.page === 'funds' ? 'req' : 'list'; ST.page = 'amal'; }
     var pl = pageList(); if (!pl.some(function (p) { return p[0] === ST.page; })) ST.page = 'bosh';
     var nav = pl.map(function (p) { return '<button data-act="nav" data-v="' + p[0] + '"' + (ST.page === p[0] ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[p[0]] + '</svg><span class="lbl-full">' + p[1] + '</span><span class="lbl-short">' + p[2] + '</span></button>'; }).join('');
     var body = '';
-    if (B.isAdmin() && ST.page === 'buxgalteriya') { ST.hbTab = 'bux'; ST.page = 'hisobot'; }
-    if (B.isStaff() && (ST.page === 'tranz' || ST.page === 'funds')) { ST.amTab = ST.page === 'funds' ? 'req' : 'list'; ST.page = 'amal'; }
     try { body = (B.pages[ST.page] || function () { return ''; })(); } catch (e) { console.error(e); body = '<div class="err">Sahifani chizishda xato: ' + esc(e.message) + '</div>'; }
     var roleName = { admin: 'Admin', operator: 'Operator', client: 'Mijoz' }[D.me.role];
     return '<div class="app"><aside class="side"><div class="brand">' + LOGO.replace('44', '38').replace('44', '38') + '<b>BARLOS</b></div><div class="mbrand">' + LOGO.replace('44', '30').replace('44', '30') + '<b>BARLOS</b></div><nav class="nav" aria-label="Asosiy">' + nav + '</nav><div class="demo-note">' + esc(D.me.name || D.me.email) + ' · ' + roleName + '<br><button class="link" style="background:none;border:0;color:var(--accent);padding:0;text-decoration:underline" data-act="logout">Chiqish</button></div></aside>' +

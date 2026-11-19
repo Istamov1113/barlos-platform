@@ -152,9 +152,11 @@
   }
   var DST = { bugun: ['Bugun', 'warn'], yozilmagan: ['Kechikkan', 'bad'], yaqin: ['Yaqinlashmoqda', ''], yozilgan: ['Yozilgan', 'ok'] };
   B.depSignalCount = function () { return ST.dep && ST.dep.due ? groups(ST.dep.due).filter(function (g) { return g.done < g.items.length && g.items.some(function (i) { return !i.done && i.days <= 0 && i.amt > 0; }); }).length : 0; };
-  B.depSignals = function () {
-    if (!ST.dep) { B.depLoad(); return '<section class="card">' + '<p class="muted">Yuklanmoqda…</p></section>'; }
-    var due = ST.dep.due || [], gs = groups(due), h = '<section class="card stack"><div class="row sb"><h2>Omonat foizi signallari</h2><span class="muted mini">Har oy, boshlanish kunining ertasi</span></div><p class="sub" style="margin:0">Signal bitta omonat va sana uchun umumiy summa va har bir mijozga taqsimlangan ulushni ko‘rsatadi. Tasdiqlansa, har bir mijoz hisobiga “Foiz” tranzaksiyasi yoziladi va omonat qoldig‘iga qo‘shiladi.</p>';
+  B.depSignals = function (onlyPending) {
+    if (!ST.dep) { B.depLoad(); return onlyPending ? '' : '<section class="card">' + '<p class="muted">Yuklanmoqda…</p></section>'; }
+    var due = ST.dep.due || [], gs = groups(due);
+    if (onlyPending) { gs = gs.filter(function (g) { return g.done < g.items.length && g.items.some(function (i) { return !i.done && i.days <= 0 && i.amt > 0; }); }); if (!gs.length) return ''; }
+    var h = '<section class="card stack"><div class="row sb"><h2>' + (onlyPending ? 'Omonat foizi — tasdiqlash kutilmoqda' : 'Omonat foizi signallari') + '</h2><span class="muted mini">' + (onlyPending ? 'Tasdiqlasangiz mijozlarga taqsimlanadi (avtomatik rejim yoniq bo‘lsa o‘zi)' : 'Har oy, boshlanish kunining ertasi') + '</span></div><p class="sub" style="margin:0">Signal bitta omonat va sana uchun umumiy summa va har bir mijozga taqsimlangan ulushni ko‘rsatadi. Tasdiqlansa, har bir mijoz hisobiga “Foiz” tranzaksiyasi yoziladi va omonat qoldig‘iga qo‘shiladi.</p>';
     if (ST.dep.error) h += '<div class="err">' + esc(ST.dep.error) + '</div>';
     if (!gs.length) return h + empty('Signal yo‘q', 'Omonat aktivida foiz, boshlanish sanasi va “har oy” to‘lov belgilanganda signallar shu yerda chiqadi.') + '</section>';
     gs.forEach(function (g) {

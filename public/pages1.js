@@ -121,7 +121,7 @@
   function adminHome() {
     var accs = D().accounts.filter(function (a) { return !a.archived; }), rows = accs.map(function (a) { var s = summary(a), u = (D().users || []).filter(function (x) { return x.id === a.uid; })[0]; return { a: a, s: s, u: u }; });
     var tot = rows.reduce(function (t, r) { t.T += r.s.T; t.dep += r.s.dep; return t; }, { T: 0, dep: 0 });
-    var h = '<div class="stack"><section class="card"><div class="stats"><div class="stat"><small>Jami boshqaruvdagi mablag‘</small><b>' + money(tot.T) + '</b></div><div class="stat"><small>Jami kiritilgan</small><b>' + money(tot.dep) + '</b></div><div class="stat"><small>Jami foyda</small><b class="' + (tot.T - tot.dep >= 0 ? 'good' : 'bad') + '">' + money(tot.T - tot.dep) + '</b></div><div class="stat"><small>Hisoblar soni</small><b>' + accs.length + '</b></div></div></section>';
+    var h = '<div class="stack">' + (B.todoCard ? B.todoCard() : '') + '<section class="card"><div class="stats"><div class="stat"><small>Jami boshqaruvdagi mablag‘</small><b>' + money(tot.T) + '</b></div><div class="stat"><small>Jami kiritilgan</small><b>' + money(tot.dep) + '</b></div><div class="stat"><small>Jami foyda</small><b class="' + (tot.T - tot.dep >= 0 ? 'good' : 'bad') + '">' + money(tot.T - tot.dep) + '</b></div><div class="stat"><small>Hisoblar soni</small><b>' + accs.length + '</b></div></div></section>';
     h += '<section class="card"><div class="row sb"><h2>Mijozlar va hisoblar</h2><span class="muted">Qatorni bosing: hisobni ochish</span></div>';
     if (!rows.length) return h + empty('Hali mijozlar yo‘q', 'Mijoz o‘zi “Hisob ochish” orqali ro‘yxatdan o‘tadi. Ular shu yerda paydo bo‘ladi.') + '</section></div>';
     rows.sort(function (x, y) { return y.s.T - x.s.T; });
@@ -131,7 +131,7 @@
       h += '<tr class="rowlink" data-act="openacc" data-v="' + r.a.id + '"><td><b>' + esc(r.a.owner) + '</b><div class="muted mini">' + esc(r.u ? r.u.email : '') + '</div></td><td>' + esc(r.a.name) + '</td><td class="n">' + money(r.s.dep) + '</td><td class="n">' + money(r.s.T) + '</td><td class="n ' + (r.s.pl >= 0 ? 'good' : 'bad') + '">' + (r.s.pl >= 0 ? '+' : '') + money(r.s.pl) + '</td><td class="n ' + (pp == null ? '' : pp >= 0 ? 'good' : 'bad') + '">' + (pp == null ? '—' : sgn(pp, 2)) + '</td><td class="n">' + (r.s.ratio != null ? r.s.ratio.toFixed(3) : '—') + '</td></tr>';
     });
     h += '<tr><td><b>Jami</b></td><td></td><td class="n"><b>' + money(tot.dep) + '</b></td><td class="n"><b>' + money(tot.T) + '</b></td><td class="n"><b>' + money(tot.T - tot.dep) + '</b></td><td></td><td></td></tr>';
-    return h + '</tbody></table></div></section></div>';
+    return h + '</tbody></table></div></section>' + (B.isAdmin() && B.usersCard ? B.usersCard() : '') + '</div>';
   }
   B.acts.openacc = function (el) { ST.accId = el.getAttribute('data-v'); ST.tab.acc = 'umumiy'; ST.page = 'bosh'; window.scrollTo(0, 0); };
   B.acts.backacc = function () { ST.accId = null; };
@@ -143,7 +143,7 @@
     var h = '<div class="stack"><div class="row sb"><div class="row"><button class="btn ghost small" data-act="backacc">← Barcha mijozlar</button><h2>' + esc(acc.owner) + ' · ' + esc(acc.name) + '</h2></div></div>';
     h += '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="acctab" data-v="' + t[0] + '" aria-pressed="' + (cur === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
     if (cur === 'umumiy') h += accOverview(acc);
-    else if (cur === 'portfel') h += portfelTable(acc);
+    else if (cur === 'portfel') h += portfelTable(acc) + levelCard(acc);
     else if (cur === 'tranz') h += txTable([acc], true);
     else if (cur === 'ulush') h += targetsView(acc, B.isAdmin());
     else if (cur === 'kirit') h += txForm(acc);
@@ -181,7 +181,7 @@
   /* yig'indi katagi: 100% bo'lsa yashil belgi, bo'lmasa farq ko'rsatiladi */
   function sumCell(v, soft) { var ok = Math.abs(v - 100) < 0.005; return '<b class="num">' + pct(v, 2) + '</b>' + (ok ? ' <span class="st good" title="Yig‘indi 100%">✓</span>' : (soft ? '' : ' <span class="muted mini" title="Yig‘indi 100% dan farq">(' + (v - 100 >= 0 ? '+' : '') + (v - 100).toFixed(2) + ')</span>')); }
   B.acts.grp = function (el) { ST.pfGroup = el.getAttribute('data-v'); };
-  function pagePortfel() { var acc = B.curAcc(); if (!acc) return ''; return accSwitch() + '<div class="stack">' + portfelTable(acc) + levelCard(acc) + '</div>'; }
+  function pagePortfel() { var acc = B.curAcc(); if (!acc) return ''; return accSwitch() + '<div class="stack">' + portfelTable(acc) + (B.isStaff() ? '' : targetsView(acc, false)) + levelCard(acc) + '</div>'; }
 
   /* ----- guruh va tur darajasidagi statuslar ----- */
   function levelCard(acc) {
@@ -208,7 +208,7 @@
     });
     var sS = 0, sN = 0, sH = 0, sD = 0;
     assets.forEach(function (x) { var r = an.assets[x.id], own = acc.targets && acc.targets[x.id] != null ? acc.targets[x.id] : '', cur = ST.f['tg_' + x.id] != null ? ST.f['tg_' + x.id] : own, nv = cur !== '' && isFinite(+cur) ? +cur : (x.target || 0); sS += x.target || 0; sN += nv; sH += r ? r.share : 0; sD += r ? r.d : 0; });
-    h += '</tbody><tfoot><tr><td>Jami</td><td class="n">' + sumCell(sS) + '</td><td class="n">' + sumCell(sN) + '</td><td class="n">' + sumCell(sH) + '</td><td class="n">' + sumCell(sD) + '</td><td></td></tr></tfoot></table></div></section>' + levelCard(acc) + '</div>';
+    h += '</tbody><tfoot><tr><td>Jami</td><td class="n">' + sumCell(sS) + '</td><td class="n">' + sumCell(sN) + '</td><td class="n">' + sumCell(sH) + '</td><td class="n">' + sumCell(sD) + '</td><td></td></tr></tfoot></table></div></section></div>';
     return h;
   }
   B.acts.savetargets = function (el) {

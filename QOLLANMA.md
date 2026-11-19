@@ -53,6 +53,28 @@ Server o'zi ham har 6 soatda `data/backups` papkasiga zaxira nusxa saqlab boradi
 2. Aktivlar → Tarixiy ma'lumotlar → "Barcha tarixni tozalash".
 3. Barcha uzse.uz fayllarini (nomida ISIN bor) bitta bo'lib shu bo'limdagi "Yuklash" orqali qayta yuklang. Har bir aktivning "Manba kodi"da ISIN bo'lishi shart.
 
+## 2.16.0: soddalashtirish (Yangi amal, Chorakni yopish, Hisobotlar markazi, Sozlamalar)
+
+Bosh sahifa, Aktivlar va Chart o'zgarmadi. Avto savdoga faqat bitta narsa qo'shildi: omonat foizi signali endi **Orderlar** bo'limida ham chiqadi.
+
+**1. Xizmat haqi va Rahbar ulushi har CHORAKDA (2.13.0).**
+- Xizmat haqi bitta formula bilan hisoblanadi: boshqaruv haqi + muvaffaqiyat haqi (hurdle bilan) + saqlash haqi (Sozlamalar → Kompaniya va stavkalar). Eski "chorak foydasining 10%" va qo'lda "oldingi chorak balansi" olib tashlandi: oldingi chorak balansi endi avtomatik.
+- Chorak tugagach: **Hisobotlar → Chorakni yopish** → "Hisoblash" → jadvalni ko'ring → "Tasdiqlash va chorakni yopish". Sayt har mijoz hisobida **"Xizmat haqi"** yozuvini (chorak oxiri sanasi bilan) yaratadi. Naqd yetmasa — bor qismi yechiladi, qolgani keyingi choraka o'tadi.
+- Zarar bo'lsa: yangi muvaffaqiyat haqi olinmaydi, keyingi foyda avval zararni qoplaydi, olingan haq qaytarilmaydi.
+- Buxgalteriyadagi daromad aynan yopilgan chorakda HAQIQATDA yechilgan summadan olinadi; Rahbar ulushi ham chorak oxirida hisoblanib, shu kuni to'lanadi. Mijoz ko'rgan haq = buxgalteriya daromadi.
+- Hisoblash qaysi choraklikdan boshlanishini Chorakni yopish bo'limining pastida tanlaysiz (birinchi yopishgacha). Standart: oxirgi tugagan chorak.
+- Ustav kapitali va foyda solig'i endi bitta joyda (Sozlamalar → Kompaniya va stavkalar) kiritiladi; Rahbar F.I.Sh. xodimlar ro'yxatidagi Rahbardan olinadi.
+
+**2. Yangi amal (2.14.0).** Admin menyusida **Amallar** bo'limi: tepada "＋ Yangi amal". Oltita tugma: Pul kirdi · Pul chiqdi · Aktiv sotib olindi · Aktiv sotildi · Pul almashtirildi · Foiz/dividend tushdi. Kimning hisobiga (bitta, tanlanganlar, hammasi — summa ulushiga qarab bo'linadi) → raqamlar → "Ko'rib chiqish" → "Tasdiqlash". Tasdiqlamaguncha hech narsa yozilmaydi. Eski "Bitim kiritish" va "Ichki o'tkazma" shu oynaga kirdi; Tranzaksiyalar va Mablag'lar (so'rovlar) ham Amallar ichida, bitta ro'yxatda.
+
+**3. Hisobotlar markazi (2.15.0).** Hisobotlar ichida tablar: Chorakni yopish · PDF hisobotlar · Buxgalteriya · Jadvallar (Excel) · Shartnoma. Alohida "Buxgalteriya" va "Jurnal" menyulari yo'q.
+
+**4. Sozlamalar va Bosh sahifa (2.16.0).** Sozlamalar tablari: Asosiy (til, ko'rinish, valyuta, dollar kursi) · Kompaniya va stavkalar · Mutaxassis (standart qiymatlar, odatda tegmaysiz) · Jurnal · Zaxira nusxa. Bosh sahifa tepasida **Bugungi ishlar** (chorakni yopish, omonat foizi, depozit/yechish so'rovlari, orderlar). Foydalanuvchilar ro'yxati Bosh sahifa pastiga ko'chdi. Maqsadli ulushlar mijozda Portfel sahifasida, "Guruhlar va turlar" jadvali bir marta.
+
+**Omonat foizi:** signal kelganda Avto savdo → Orderlar'da chiqadi; "Barcha mijozlarga yozish" bilan tasdiqlaysiz. Yuqoridagi **Avtomatik bozorga chiqarish** yoqilgan bo'lsa, o'zi taqsimlanadi (har 10 daqiqada tekshiriladi).
+
+**O'rnatish:** `data/` va `.env` ga tegmang, yangi fayllarni ustiga yozing va serverni qayta ishga tushiring. Eski ma'lumotlar o'zgarmaydi. Eski yopilmagan choraklar uchun haq avtomatik yechilmaydi — kerak bo'lsa "Chorakni yopish" da boshlanish choragini tanlang.
+
 ## 2.12.0: Buxgalteriya moduli (balans, moliyaviy natija, maosh, shartnomalar, Rahbar ulushi)
 
 **Admin menyusida yangi sahifa: Buxgalteriya.** Hamma hisobot sayt ma'lumotidan AVTOMATIK tuziladi, jurnal qo'lda tahrirlanmaydi (har safar qayta quriladi, yozuvlar faqat sabab bilan bekor qilinadi).
@@ -437,13 +459,13 @@ Brauzerda oching: **http://localhost:3000**
    - "+ Naqd so'm (UZS)" tugmasini bosing (depozitlar shu aktiv orqali kiritiladi).
    - "+ Aktiv qo'shish": yuqoridagi qidiruvda manbani tanlang (Bitget / CoinMarketCap / Finviz / uzse.uz), tikerni yozing (BTC, AAPL, UZ… ISIN), "Qidirish" → natijadan "Tanlash" → **Normal ulush %** kiriting → Saqlash. Yoki hamma maydonni qo'lda to'ldiring.
 4. **Mijoz hisobini oching**: boshqa brauzerda (yoki Inkognito oynada) http://localhost:3000 ga kirib "Hisob ochish" orqali test mijoz yarating.
-5. Admin oynasida **Bosh sahifa** → mijozni bosing → **Bitim kiritish**:
-   - Tur: DEPOZIT, aktiv: UZS, miqdor: 10000000 → Qo'shish.
-   - Tur: BUY, aktiv: BTC, miqdor: 0.01 → Qo'shish.
+5. Admin oynasida **Amallar** → **＋ Yangi amal** (yoki Bosh sahifa → mijoz → Yangi amal):
+   - **Pul kirdi** → hisobni tanlang → miqdor 10000000 → Ko'rib chiqish → Tasdiqlash.
+   - **Aktiv sotib olindi** → hisob, aktiv BTC, miqdor 0.01 → Ko'rib chiqish → Tasdiqlash.
 6. Mijoz oynasida portfel, diagramma va tranzaksiyalarni ko'ring (bir necha soniyada o'zi yangilanadi).
 7. **Hisobotlar** → "Tranzaksiyalar" → "Excel (.xlsx) yuklab olish".
 8. **Avto savdo** → "Qo'lda signal" (BTC, SELL) → "Orderlar" bo'limida order paydo bo'ladi → qatorni bosib mijozlar bo'yicha Ruxsat/Rad ni ko'ring → "Bozorga yuborish".
-9. **Profil → Foydalanuvchilar va qurilmalar**: barcha foydalanuvchilar, ularning kirgan qurilmalari.
+9. **Bosh sahifa** pastida **Foydalanuvchilar va qurilmalar**: barcha foydalanuvchilar, ularning kirgan qurilmalari.
 
 Ma'lumotlar `barlos/data/barlos.db` faylida saqlanadi. Sinovdan so'ng toza boshlamoqchi bo'lsangiz: serverni to'xtatib, `data` papkasini o'chiring va 5-qadamdan boshlang.
 

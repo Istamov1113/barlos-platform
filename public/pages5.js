@@ -139,6 +139,28 @@
   }
   B.quarterTab = quarterTab;
 
+
+  /* ================= BUGUNGI ISHLAR (Bosh sahifa tepasida) ================= */
+  B.acts.todo = function (el) {
+    var p = el.getAttribute('data-p'), t = el.getAttribute('data-t');
+    if (p === 'hisobot') ST.hbTab = t; if (p === 'amal') ST.amTab = t; if (p === 'savdo') ST.trTab = t; ST.accId = null; ST.page = p; window.scrollTo(0, 0);
+  };
+  B.todoCard = function () {
+    var d = D(), items = [];
+    if (B.isAdmin()) {
+      if (!ST.qs) B.qLoad(); else if (ST.qs.next) { var nq = ST.qs.quarters.filter(function (x) { return x.key === ST.qs.next; })[0]; items.push(['Chorakni yopish', (nq ? nq.label : ST.qs.next) + ': xizmat haqi va Rahbar ulushi hisoblanadi', 'Yopish', 'hisobot', 'chorak']); }
+    }
+    if (!ST.dep && !ST.depLoadStarted) { ST.depLoadStarted = true; B.depLoad(); }
+    var dc = B.depSignalCount ? B.depSignalCount() : 0; if (dc && B.isAdmin()) items.push(['Omonat foizi', dc + ' ta signal tasdiqlashni kutmoqda', 'Orderlarga', 'savdo', 'ord']);
+    var pd = (d.dep || []).filter(function (x) { return x.status === 'Tasdiqlash kutilmoqda'; }).length, pw = (d.wd || []).filter(function (w) { return w.status === 'Kutilmoqda'; }).length;
+    if (pd) items.push(['Depozit so‘rovlari', pd + ' ta to‘lov tasdiqlashni kutmoqda', 'Ko‘rish', 'amal', 'req']);
+    if (pw) items.push(['Yechish so‘rovlari', pw + ' ta so‘rov kutmoqda', 'Ko‘rish', 'amal', 'req']);
+    var po = (d.orders || []).filter(function (o) { return o.status === 'Kutilmoqda'; }).length; if (po && B.isAdmin()) items.push(['Orderlar', po + ' ta order yuborilishini kutmoqda', 'Ko‘rish', 'savdo', 'ord']);
+    var h = '<section class="card stack"><h2>Bugungi ishlar</h2>';
+    if (!items.length) return h + '<p class="muted" style="margin:0">Hozircha bajariladigan ish yo‘q ✓</p></section>';
+    return h + items.map(function (i) { return '<div class="row sb sigrow"><div><b>' + esc(i[0]) + '</b><div class="muted mini">' + esc(i[1]) + '</div></div><button class="btn small" data-act="todo" data-p="' + i[3] + '" data-t="' + i[4] + '">' + esc(i[2]) + '</button></div>'; }).join('') + '</section>';
+  };
+
   B.amalDone = function () { W.open = false; W.kind = ''; W.plan = null; };
   B.pages.amal = pageAmal;
 })(window.B);

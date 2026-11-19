@@ -360,6 +360,12 @@ const srv = app.listen(0, async () => {
         r = await adm('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 200 && r.j.ids.length === 2, 'umumiy signal tasdiqlandi: ' + JSON.stringify(r.j) + JSON.stringify(grp));
         r = await adm('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 400, 'umumiy signal ikki marta yozilmaydi');
         r = await cl3('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 403, 'mijoz umumiy signalni tasdiqlay olmaydi: ' + r.s + JSON.stringify(r.j));
+        /* avto-chiqarish yoqilsa, vaqti kelgan omonat foizi o'zi taqsimlanadi (2.16.0) */
+        r = await adm('GET', '/api/deposits'); const pend2 = r.j.due.filter(x => x.aid === oid && !x.done && x.days <= 0 && x.amt > 0);
+        if (pend2.length) { r = await adm('POST', '/api/settings', { autoRel: true }); ok(r.s === 200, 'avto-chiqarish yoqildi');
+          r = await adm('GET', '/api/deposits'); ok(r.j.due.filter(x => x.aid === oid && !x.done && x.days <= 0 && x.amt > 0).length === 0, 'omonat foizi tasdiqlashsiz taqsimlandi (' + pend2.length + ' ta)');
+          r = await adm('POST', '/api/settings', { autoRel: false }); }
+        else ok(true, 'avto-taqsimlash: kutilayotgan signal qolmagan');
         /* aktiv statistikasi */
         st = await adm('GET', '/api/state'); const SA = { fx: st.j.settings.fx, assets: st.j.assets, accounts: st.j.accounts, tx: st.j.tx }, bt = SA.assets.filter(a => a.sym === 'BTC')[0], as = Cd.assetStats(SA, SA.accounts.filter(a => a.id === accBtc), bt, Date.now());
         ok(as.qty > 0 && near(as.total, as.realized + as.unreal + as.income, 1), 'aktiv daromadi: realizatsiya + baholash + foiz = jami: ' + as.total + ' vs ' + (as.realized + as.unreal + as.income));

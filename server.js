@@ -601,7 +601,7 @@ app.post('/api/settings', A, wrap((req, res) => {
     o.tax.vatPayer = ['Ha', 'Yo‘q', 'Tekshiring'].indexOf((r.tax || {}).vatPayer) >= 0 ? r.tax.vatPayer : 'Tekshiring'; o.tax.vatExempt = ['Ha', 'Yo‘q', 'Tekshiring'].indexOf((r.tax || {}).vatExempt) >= 0 ? r.tax.vatExempt : 'Tekshiring';
     o.tax.direct = num((r.tax || {}).direct || 0, 0, 1e15, 'Xarajat'); o.tax.general = num((r.tax || {}).general || 0, 0, 1e15, 'Xarajat');
     Object.keys(r.f8 || {}).slice(0, 20).forEach(k => { const m = r.f8[k] || {}; if (['Ha', 'Yo‘q', 'Qisman', 'N/A'].indexOf(m.status) >= 0 || m.note) o.f8[String(+k)] = { status: ['Ha', 'Yo‘q', 'Qisman', 'N/A'].indexOf(m.status) >= 0 ? m.status : '', note: str(m.note, 200) }; });
-    s.rep = o;
+    s.rep = o; accounting.syncFromRep(o);
   }
   if (b.priceMin !== undefined) { const v = +b.priceMin; if (!(v >= 1 && v <= 1440)) throw bad('Interval 1–1440 daqiqa.'); s.priceMin = v; scheduleRefresh(); }
   if (b.pay !== undefined) {
@@ -610,7 +610,7 @@ app.post('/api/settings', A, wrap((req, res) => {
     s.pay = b.pay.slice(0, 10).map((p, i) => ({ id: str(p.id, 24) || ('P' + (i + 1) + crypto.randomBytes(2).toString('hex')), name: str(p.name, 60), holder: str(p.holder, 80), number: str(p.number, 60), url: /^https?:\/\//i.test(p.url || '') ? str(p.url, 400) : '', note: str(p.note, 300) })).filter(p => p.name);
   }
   if (b.uzseHist !== undefined) s.uzseHist = /^https?:\/\//i.test(b.uzseHist || '') ? String(b.uzseHist).trim().slice(0, 600) : '';
-  const chg = !!s.stochChg; delete s.stochChg; db.put('settings', s); if (chg) stochRun().catch(e => console.error('stoch:', e.message));
+  const chg = !!s.stochChg; delete s.stochChg; db.put('settings', s); if (b.autoRel) { try { autoDeposits(); } catch (e) { console.error(e.message); } } if (chg) stochRun().catch(e => console.error('stoch:', e.message));
   res.json({ ok: true });
 }));
 app.post('/api/stoch/refresh', A, wrap(async (req, res) => { res.json({ stoch: await stochRun() }); }));
@@ -942,6 +942,18 @@ app.post('/api/deposits/accept-group', AO, wrap((req, res) => {
   req.ad = x.sym + ' ' + date + ': ' + ids.length + ' ta mijoz, jami ' + todo.reduce((s, i) => s + i.amt, 0); res.json({ ok: true, ids });
 }));
 
+/* "Avtomatik bozorga chiqarish" yoqilgan bo'lsa: vaqti kelgan omonat foizi signallari tasdiqlashsiz mijozlarga taqsimlanadi (eng eski sanadan boshlab) */
+function autoDeposits() {
+  if (!settings().autoRel) return 0;
+  const S = loadS(), all = Core.depDue(S, now(), { ahead: 0, back: 400 }), keys = {}; let n = 0;
+  all.forEach(x => { keys[x.aid + '|' + x.date] = { aid: x.aid, date: x.date }; });
+  Object.keys(keys).map(k => keys[k]).sort((a, b) => a.date < b.date ? -1 : 1).forEach(g => {
+    const todo = all.filter(x => x.aid === g.aid && x.date === g.date && !x.done && x.amt > 0); if (!todo.length) return;
+    if (all.some(x => x.aid === g.aid && !x.done && x.amt > 0 && x.date < g.date)) return;
+    try { db.tx(() => { const blk = 'B' + (10000 + db.seq('blk')); todo.forEach(it => { depWrite(S, it, 'Tizim (avtomatik)', blk); n++; }); }); } catch (e) { console.error('omonat avto:', e.message); }
+  });
+  return n;
+}
 /* ---------------- Obligatsiya: kupon jadvali, yig'ilgan foiz, YTM signali, kupon yozuvlari ---------------- */
 const ISO = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && isFinite(Core.dayNum(String(v)));
 function cleanBond(b) {
@@ -1012,7 +1024,7 @@ function bootAdmin() {
 }
 const PORT = +(process.env.PORT || 3000);
 if (require.main === module) {
-  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
+  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
   /* uzse.uz kunlik yangilash: har 30 daqiqada (havola sozlangan bo'lsa); seans 16:00 dan keyin ham ishlaydi */
   setInterval(() => syncAllHist().catch(e => console.error('tarix yangilash:', e.message)), 5 * 60e3); setTimeout(() => { db.all('assets').forEach(x => seedPrice(x.id)); syncAllHist().catch(() => { }); }, 15000);
   app.listen(PORT, () => {

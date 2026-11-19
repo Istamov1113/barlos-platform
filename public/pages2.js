@@ -193,7 +193,9 @@
     if (tr.length) h += '<form data-form="signal" class="row" style="align-items:end"><b>Qo‘lda signal:</b>' + sel('sg_aid', tr.map(function (a) { return [a.id, a.sym]; }), tr[0].id) + sel('sg_side', [['BUY', 'BUY'], ['SELL', 'SELL']], 'BUY') + '<input type="number" step="any" min="0" placeholder="Narx (bo‘sh = joriy)"' + bind('sg_price') + '><button class="btn small" type="submit">Yuborish</button></form>';
     h += '</section>';
     var act = d.orders.filter(function (o) { return o.status === 'Kutilmoqda'; }), done = d.orders.filter(function (o) { return o.status !== 'Kutilmoqda'; });
-    h += '<div class="seg tabs" role="tablist">' + [['sig', 'Signallar (' + d.signals.length + ')'], ['ord', 'Orderlar (' + act.length + ')'], ['done', 'Yakunlangan (' + done.length + ')'], ['dep', 'Omonat foizi' + (B.depSignalCount() ? ' (' + B.depSignalCount() + ')' : '')]].map(function (t) { return '<button data-act="trtab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    h += '<div class="seg tabs" role="tablist">' + [['sig', 'Signallar (' + d.signals.length + ')'], ['ord', 'Orderlar (' + (act.length + B.depSignalCount()) + ')'], ['done', 'Yakunlangan (' + done.length + ')'], ['dep', 'Omonat foizi' + (B.depSignalCount() ? ' (' + B.depSignalCount() + ')' : '')]].map(function (t) { return '<button data-act="trtab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    if (!ST.dep && !ST.depLoadStarted) { ST.depLoadStarted = true; B.depLoad(); }
+    if (tab === 'ord') h += B.depSignals(true);
     if (tab === 'dep') h += B.depSignals();
     else if (tab === 'sig') {
       h += '<section class="card"><div class="row sb"><h2>Signallar</h2><span class="lock">O‘chirish mumkin emas</span></div>';
@@ -257,7 +259,7 @@
     var s = ST.rsort || {}; if (s.kind === kind && s.col != null) { var c = s.col, dir = s.dir; rows.sort(function (a, b) { var x = a.v[c], y = b.v[c]; if (x == null) return 1; if (y == null) return -1; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * dir; }); }
     return rows;
   }
-  function curKind() { return ST.page === 'jurnal' ? 'log' : ((ST.rkind && ST.rkind !== 'log') ? ST.rkind : 'acc'); }
+  function curKind() { return ST.page === 'jurnal' || (ST.page === 'sozlama' && ST.sozTab === 'jurnal') ? 'log' : ((ST.rkind && ST.rkind !== 'log') ? ST.rkind : 'acc'); }
   B.acts.repkind = function (el) { ST.rkind = el.getAttribute('data-v'); ST.rsort = null; };
   B.acts.repsort = function (el) { var c = +el.getAttribute('data-v'), k = curKind(), s = ST.rsort; ST.rsort = { kind: k, col: c, dir: s && s.kind === k && s.col === c ? -s.dir : 1 }; };
   B.acts.represet = function () { Object.keys(ST.f).forEach(function (k) { if (k.indexOf('rp_') === 0) delete ST.f[k]; }); };
@@ -413,10 +415,25 @@
   function sessList(list, uid) {
     return '<div class="stack" style="gap:6px">' + list.map(function (s) { return '<div class="res"><div><b>' + esc(s.dev) + '</b> · ' + esc(s.os) + ' · ' + esc(s.br) + '<div class="muted mini">IP ' + esc(s.ip || '') + ' · oxirgi faollik ' + B.ago(s.last) + '</div></div>' + (s.cur ? '<span class="pill p-b">Joriy seans</span>' : '<button class="btn ghost small" data-act="endsess" data-v="' + s.id + '"' + (uid ? ' data-u="' + uid + '"' : '') + '>Seansni tugatish</button>') + '</div>'; }).join('') + '</div>';
   }
+  /* foydalanuvchilar va qurilmalar — endi Bosh sahifadagi mijozlar ro'yxati ostida */
+  B.usersCard = function () {
+    var d = D(), me = d.me, h = '';
+    h += '<section class="card"><h2>Foydalanuvchilar va qurilmalar</h2><p class="sub">Qatorni bosib qurilmalarni ko‘ring. Email tasdiqlash ' + (d.cfg && d.cfg.smtp ? 'yoqilgan.' : 'yoqilmagan (SMTP sozlanmagan): parol tiklashni siz vaqtinchalik parol bilan bajarasiz.') + '</p><div class="tw"><table style="min-width:760px"><thead><tr><th>Foydalanuvchi</th><th>Rol</th><th>Hisoblar</th><th>Oxirgi kirish</th><th>Qurilmalar</th><th>Holat</th></tr></thead><tbody>';
+      d.users.forEach(function (u) {
+        var open = !!ST.open['u' + u.id], accs = d.accounts.filter(function (a) { return a.uid === u.id; });
+        h += '<tr class="rowlink" data-act="tog" data-v="u' + u.id + '"><td><b>' + esc(u.name || '—') + '</b><div class="muted mini">' + esc(u.email) + ' · ' + u.id + '</div></td><td>' + { admin: 'Admin', operator: 'Operator', client: 'Mijoz' }[u.role] + '</td><td>' + (accs.map(function (a) { return a.kind === 'isl' ? 'Islomiy' : 'Universal'; }).join(', ') || '—') + '</td><td>' + (u.last ? B.ago(u.last) : '—') + '</td><td>' + u.sessions.length + '</td><td>' + (u.blocked ? '<span class="pill p-s">Bloklangan</span>' : u.verified ? '<span class="pill p-b">Faol</span>' : '<span class="pill p-w">Tasdiqlanmagan</span>') + '</td></tr>';
+        if (open) {
+          h += '<tr class="det"><td colspan="6"><div class="stack">' + (u.sessions.length ? sessList(u.sessions.map(function (s) { return Object.assign({}, s, { cur: u.id === me.id && s.id === (me.sessions.filter(function (x) { return x.cur; })[0] || {}).id }); }), u.id) : '<span class="muted">Faol seans yo‘q.</span>');
+          if (u.role !== 'admin') h += '<div class="row">' + (u.role === 'client' ? '<button class="btn ghost small" data-act="userrole" data-v="' + u.id + '" data-r="operator">Operator qilish</button>' : '<button class="btn ghost small" data-act="userrole" data-v="' + u.id + '" data-r="client">Mijoz qilish</button>') + '<button class="btn ghost small" data-act="userpass" data-v="' + u.id + '">Vaqtinchalik parol o‘rnatish</button><button class="btn ghost small" data-act="userblock" data-v="' + u.id + '" data-b="' + (u.blocked ? 0 : 1) + '">' + (u.blocked ? 'Blokdan chiqarish' : 'Bloklash') + '</button>' + (u.role === 'client' && !accs.some(function (a) { return a.kind === 'isl' && !a.archived; }) ? '<button class="btn ghost small" data-act="useracc" data-v="' + u.id + '" data-k="isl">Islomiy hisob ochish</button>' : '') + '</div>';
+          h += '</div></td></tr>';
+        }
+      });
+      h += '</tbody></table></div></section>';
+    return h;
+  };
   function pageProfil() {
     var d = D(), me = d.me, tabs = [['info', 'Shaxsiy ma’lumotlar'], ['sess', 'Faol seanslar']];
-    if (!B.isStaff()) tabs.push(['targets', 'Maqsadli ulushlar'], ['bill', 'Xizmat haqi va yechish']);
-    if (B.isAdmin()) tabs.push(['users', 'Foydalanuvchilar va qurilmalar']);
+    if (!B.isStaff()) tabs.push(['bill', 'Xizmat haqi va yechish']);
     var tab = ST.pfTab || 'info'; if (!tabs.some(function (t) { return t[0] === tab; })) tab = 'info';
     var h = '<div class="stack"><div class="card row">' + B.avatar(me, 56) + '<div><h2>' + esc(me.name || me.email) + '</h2><p class="sub" style="margin:0">' + (me.username ? '@' + esc(me.username) + ' · ' : '') + esc(me.id) + ' · ' + esc(me.email) + ' · ' + { admin: 'Admin', operator: 'Operator', client: 'Mijoz' }[me.role] + '</p></div></div>';
     h += '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="pftab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
@@ -429,18 +446,6 @@
       var acc = B.curAcc(); h += acc ? B.targetsView(acc, false) : '';
     } else if (tab === 'bill') {
       h += '<section class="card stack"><h2>Xizmat haqi</h2><p class="sub">Xizmat haqi har chorak oxirida hisobingizdan avtomatik undiriladi. Foyda bo‘lmagan chorakda muvaffaqiyat haqi olinmaydi; zarar keyingi foyda bilan avval qoplanadi.</p>' + d.accounts.filter(function (a) { return !a.archived; }).map(function (a) { var s = B.summary(a), f = B.feeInfo(a); return '<div class="stats"><div class="stat"><small>' + esc(a.name) + ' · ' + s.q.label + ' foydasi</small><b>' + money(s.q.profit) + '</b></div><div class="stat"><small>Oxirgi undirilgan haq</small><b>' + (f.last ? money(f.last.amount) : '—') + '</b></div><div class="stat"><small>Jami undirilgan</small><b>' + money(f.total) + '</b></div></div>'; }).join('') + '</section>';
-    } else if (tab === 'users') {
-      h += '<section class="card"><h2>Foydalanuvchilar va qurilmalar</h2><p class="sub">Qatorni bosib qurilmalarni ko‘ring. Email tasdiqlash ' + (d.cfg && d.cfg.smtp ? 'yoqilgan.' : 'yoqilmagan (SMTP sozlanmagan): parol tiklashni siz vaqtinchalik parol bilan bajarasiz.') + '</p><div class="tw"><table style="min-width:760px"><thead><tr><th>Foydalanuvchi</th><th>Rol</th><th>Hisoblar</th><th>Oxirgi kirish</th><th>Qurilmalar</th><th>Holat</th></tr></thead><tbody>';
-      d.users.forEach(function (u) {
-        var open = !!ST.open['u' + u.id], accs = d.accounts.filter(function (a) { return a.uid === u.id; });
-        h += '<tr class="rowlink" data-act="tog" data-v="u' + u.id + '"><td><b>' + esc(u.name || '—') + '</b><div class="muted mini">' + esc(u.email) + ' · ' + u.id + '</div></td><td>' + { admin: 'Admin', operator: 'Operator', client: 'Mijoz' }[u.role] + '</td><td>' + (accs.map(function (a) { return a.kind === 'isl' ? 'Islomiy' : 'Universal'; }).join(', ') || '—') + '</td><td>' + (u.last ? B.ago(u.last) : '—') + '</td><td>' + u.sessions.length + '</td><td>' + (u.blocked ? '<span class="pill p-s">Bloklangan</span>' : u.verified ? '<span class="pill p-b">Faol</span>' : '<span class="pill p-w">Tasdiqlanmagan</span>') + '</td></tr>';
-        if (open) {
-          h += '<tr class="det"><td colspan="6"><div class="stack">' + (u.sessions.length ? sessList(u.sessions.map(function (s) { return Object.assign({}, s, { cur: u.id === me.id && s.id === (me.sessions.filter(function (x) { return x.cur; })[0] || {}).id }); }), u.id) : '<span class="muted">Faol seans yo‘q.</span>');
-          if (u.role !== 'admin') h += '<div class="row">' + (u.role === 'client' ? '<button class="btn ghost small" data-act="userrole" data-v="' + u.id + '" data-r="operator">Operator qilish</button>' : '<button class="btn ghost small" data-act="userrole" data-v="' + u.id + '" data-r="client">Mijoz qilish</button>') + '<button class="btn ghost small" data-act="userpass" data-v="' + u.id + '">Vaqtinchalik parol o‘rnatish</button><button class="btn ghost small" data-act="userblock" data-v="' + u.id + '" data-b="' + (u.blocked ? 0 : 1) + '">' + (u.blocked ? 'Blokdan chiqarish' : 'Bloklash') + '</button>' + (u.role === 'client' && !accs.some(function (a) { return a.kind === 'isl' && !a.archived; }) ? '<button class="btn ghost small" data-act="useracc" data-v="' + u.id + '" data-k="isl">Islomiy hisob ochish</button>' : '') + '</div>';
-          h += '</div></td></tr>';
-        }
-      });
-      h += '</tbody></table></div></section>';
     }
     return h + '</div>';
   }
@@ -557,7 +562,7 @@
   function repCard() {
     var R = repLoad(); if (!R || !R.conf) return '<section class="card stack"><h2>Hisobot sozlamalari (admin)</h2><p class="sub">Yuklanmoqda…</p></section>';
     var c = R.conf, f = ST.f, v = function (k, d) { return f[k] != null ? f[k] : d; }, inp = function (k, lbl, d, t) { return fld(lbl, '<input type="' + (t || 'text') + '"' + (t === 'number' ? ' step="any" min="0"' : '') + ' data-bind="' + k + '" value="' + esc(v(k, d)) + '">'); };
-    var h = '<section class="card stack"><h2>Hisobot sozlamalari (admin)</h2><p class="sub">Avtomatik PDF hisobotlar shu ma’lumotlardan foydalanadi. Stavkalar namuna: shartnoma 3-ilovasiga va Soliq kodeksiga qarab to‘ldiring.</p><form data-form="repconf" class="stack"><h3>Kompaniya</h3><div class="form-grid">' +
+    var h = '<section class="card stack"><h2>Kompaniya va stavkalar</h2><p class="sub">Bir marta kiritasiz — PDF hisobotlar, NAPP va buxgalteriya shu ma’lumotdan foydalanadi (ustav kapitali va foyda solig‘i endi alohida ikkinchi joyda kiritilmaydi). Stavkalar namuna: shartnoma 3-ilovasiga va Soliq kodeksiga qarab to‘ldiring.</p><form data-form="repconf" class="stack"><h3>Kompaniya</h3><div class="form-grid">' +
       inp('rc_name', 'Nomi', c.co.name) + inp('rc_stir', 'STIR', c.co.stir) + inp('rc_license', 'Litsenziya', c.co.license) + inp('rc_head', 'Rahbar F.I.Sh.', c.co.head) + inp('rc_acct', 'Bosh buxgalter F.I.Sh.', c.co.accountant) + '</div><h3>O‘z mablag‘lari (F2), so‘m</h3><div class="form-grid">' +
       inp('rc_o_charter', 'Ustav kapitali', c.own.charter, 'number') + inp('rc_o_added', 'Qo‘shilgan kapital', c.own.added, 'number') + inp('rc_o_reserve', 'Zaxira kapital', c.own.reserve, 'number') + inp('rc_o_retained', 'Taqsimlanmagan foyda', c.own.retained, 'number') + inp('rc_o_target', 'Maqsadli tushumlar', c.own.target, 'number') + inp('rc_o_prov', 'Xarajatlar zaxiralari', c.own.provisions, 'number') + inp('rc_o_intang', 'Nomoddiy aktivlar (chegiriladi)', c.own.intangible, 'number') + '</div><h3>Stavkalar</h3><div class="form-grid">' +
       inp('rc_r_mgmt', 'Boshqaruv haqi, yillik %', c.rate.mgmt, 'number') + inp('rc_r_succ', 'Muvaffaqiyat haqi, %', c.rate.success, 'number') + inp('rc_r_hurdle', 'Hurdle, yillik %', c.rate.hurdle, 'number') + inp('rc_r_cust', 'Saqlash/depozitariy, yillik %', c.rate.custody, 'number') + inp('rc_r_ptax', 'Foyda solig‘i, %', c.rate.profitTax, 'number') + inp('rc_r_dtax', 'Dividend solig‘i, %', c.rate.divTax, 'number') + inp('rc_r_vat', 'QQS, %', c.rate.vat, 'number') + inp('rc_r_min', 'O‘z mablag‘lari minimal ulushi, %', c.rate.minOwn, 'number') + inp('rc_r_lim', 'Bitta pozitsiya limiti, %', c.rate.limit, 'number') + fld('Yildagi kunlar', sel('rc_r_days', [['365', '365'], ['360', '360']], String(c.rate.days))) + '</div><h3>Soliq (F6)</h3><div class="form-grid">' +
@@ -578,18 +583,24 @@
     var s = D().settings, h = '<div class="stack"><section class="card stack"><h2>Til</h2><p class="sub">Interfeys tilini tanlang.</p>' + opts('setlang', [['uz', 'O’zbekcha', 'Lotin yozuvi'], ['ru', 'Русский', 'Русский язык'], ['en', 'English', 'English']], ST.lang) + '</section>' +
       '<section class="card stack"><h2>Tizim ko’rinishi</h2><p class="sub">BARLOS asosiy ko’rinishi qora va tillarang. Xohlasangiz yorug’ ko’rinishni tanlashingiz mumkin.</p>' + opts('settheme', [['system', 'Standart', 'Qora va tillarang (asosiy ko’rinish)'], ['light', 'Yorug’', 'Iliq oq fon, tillarang urg’u'], ['dark', 'Qorong’u', 'Qora fon, tillarang urg’u']], ST.theme) + '</section>' +
       '<section class="card stack"><h2>Valyuta</h2><p class="sub">Summalar qaysi valyutada ko’rsatilsin.</p>' + opts('setcur', [['UZS', 'So’m', 'O’zbek so’mi'], ['USD', 'USD', 'AQSh dollari']], ST.cur) + '<p class="muted">Tanlovlar shu brauzerda saqlanadi.</p></section>';
-    if (B.isAdmin()) {
-      h += '<section class="card stack"><h2>Tizim sozlamalari (admin)</h2><form data-form="sys" class="stack"><div class="form-grid">' + fld('Dollar kursi (so‘m)' + (s.fxT ? ' — yangilangan ' + fdt(s.fxT) : ''), '<input type="number" step="any" min="0" placeholder="' + (s.fx.USD || '') + '"' + bind('sy_usd') + '>') +
-        fld('Narxlarni avto yangilash (daqiqa)', '<input type="number" min="1" max="1440" data-bind="sy_pm" value="' + esc(ST.f.sy_pm != null ? ST.f.sy_pm : s.priceMin) + '">') + fld('Taqqoslash stavkasi, yillik % (portfel koeffitsienti)', '<input type="number" step="any" min="0" data-bind="sy_br" value="' + esc(ST.f.sy_br != null ? ST.f.sy_br : s.benchRate) + '">') + fld('Taqqoslash foizi qo‘shilishi', sel('sy_bp', [['none', 'Qo‘shilmaydi (oddiy foiz)'], ['monthly', 'Har oy qo‘shiladi'], ['quarterly', 'Har chorak qo‘shiladi'], ['yearly', 'Har yil qo‘shiladi']], s.benchPay || 'none')) + fld('N: odatiy', '<input type="number" min="1" data-bind="sy_nb" value="' + esc(ST.f.sy_nb != null ? ST.f.sy_nb : s.nBase) + '">') + fld('N: HOLD holatida', '<input type="number" min="1" data-bind="sy_nh" value="' + esc(ST.f.sy_nh != null ? ST.f.sy_nh : s.nHold) + '">') + fld('N: qarama-qarshi holatda', '<input type="number" min="1" data-bind="sy_ns" value="' + esc(ST.f.sy_ns != null ? ST.f.sy_ns : s.nSell) + '">') + '</div>' +
-        '<label class="switch"><input type="checkbox" data-bind="sy_auto"' + ((ST.f.sy_auto != null ? ST.f.sy_auto : s.fxAuto) ? ' checked' : '') + '> Dollar kursini CBU (Markaziy bank) dan avtomatik olish</label><div class="row"><button class="btn" type="submit">Saqlash</button></div></form></section>';
+    if (!B.isAdmin()) return h + '</div>';
+    var tab = ST.sozTab || 'asosiy', tabs = [['asosiy', 'Asosiy'], ['kompaniya', 'Kompaniya va stavkalar'], ['mutaxassis', 'Mutaxassis'], ['jurnal', 'Jurnal'], ['zaxira', 'Zaxira nusxa']];
+    var bar = '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="soztab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    if (tab === 'jurnal') return '<div class="stack">' + bar + pageHisobot() + '</div>';
+    if (tab === 'kompaniya') return '<div class="stack">' + bar + repCard() + contractCard() + payEditor() + '</div>';
+    if (tab === 'mutaxassis') {
+      return '<div class="stack">' + bar + '<section class="card stack"><h2>Mutaxassis sozlamalari</h2><p class="sub">Odatda o‘zgartirish shart emas — standart qiymatlar bilan ishlayveradi.</p><form data-form="sys" class="stack"><div class="form-grid">' +
+        fld('Narxlarni avto yangilash (daqiqa)', '<input type="number" min="1" max="1440" data-bind="sy_pm" value="' + esc(ST.f.sy_pm != null ? ST.f.sy_pm : s.priceMin) + '">') + fld('Taqqoslash stavkasi, yillik % (portfel koeffitsienti)', '<input type="number" step="any" min="0" data-bind="sy_br" value="' + esc(ST.f.sy_br != null ? ST.f.sy_br : s.benchRate) + '">') + fld('Taqqoslash foizi qo‘shilishi', sel('sy_bp', [['none', 'Qo‘shilmaydi (oddiy foiz)'], ['monthly', 'Har oy qo‘shiladi'], ['quarterly', 'Har chorak qo‘shiladi'], ['yearly', 'Har yil qo‘shiladi']], s.benchPay || 'none')) + fld('N: odatiy', '<input type="number" min="1" data-bind="sy_nb" value="' + esc(ST.f.sy_nb != null ? ST.f.sy_nb : s.nBase) + '">') + fld('N: HOLD holatida', '<input type="number" min="1" data-bind="sy_nh" value="' + esc(ST.f.sy_nh != null ? ST.f.sy_nh : s.nHold) + '">') + fld('N: qarama-qarshi holatda', '<input type="number" min="1" data-bind="sy_ns" value="' + esc(ST.f.sy_ns != null ? ST.f.sy_ns : s.nSell) + '">') + '</div><div class="row"><button class="btn" type="submit">Saqlash</button></div></form></section>' + stochCard() + '</div>';
     }
-    if (B.isAdmin()) h += stochCard();
-    if (B.isAdmin()) h += contractCard();
-    if (B.isAdmin()) h += repCard();
-    if (B.isAdmin()) h += payEditor();
-    if (B.isAdmin()) h += '<section class="card stack"><h2>Zaxira nusxa</h2><p class="sub">Barcha ma‘lumotlar (mijozlar, aktivlar, bitimlar, jurnal, chart sozlamalari) bitta faylda. Server o‘zi har 6 soatda <code>data/backups</code> papkasiga nusxa saqlaydi (oxirgi 30 ta). Yangi versiya o‘rnatishdan oldin ham yuklab oling.</p><div class="row"><a class="btn" href="/api/backup" download>Zaxira nusxani yuklab olish (.db)</a></div></section>';
-    return h + '</div>';
+    if (tab === 'zaxira') {
+      var z = ''; 
+      z = '<section class="card stack"><h2>Zaxira nusxa</h2><p class="sub">Barcha ma‘lumotlar (mijozlar, aktivlar, bitimlar, jurnal, chart sozlamalari) bitta faylda. Server o‘zi har 6 soatda <code>data/backups</code> papkasiga nusxa saqlaydi (oxirgi 30 ta). Yangi versiya o‘rnatishdan oldin ham yuklab oling.</p><div class="row"><a class="btn" href="/api/backup" download>Zaxira nusxani yuklab olish (.db)</a></div></section>';
+      return '<div class="stack">' + bar + z + '</div>';
+    }
+    return h.replace('<div class="stack">', '<div class="stack">' + bar) + '<section class="card stack"><h2>Dollar kursi</h2><form data-form="sys" class="stack"><div class="form-grid">' + fld('Dollar kursi (so‘m)' + (s.fxT ? ' — yangilangan ' + fdt(s.fxT) : ''), '<input type="number" step="any" min="0" placeholder="' + (s.fx.USD || '') + '"' + bind('sy_usd') + '>') + '</div>' +
+      '<label class="switch"><input type="checkbox" data-bind="sy_auto"' + ((ST.f.sy_auto != null ? ST.f.sy_auto : s.fxAuto) ? ' checked' : '') + '> Dollar kursini CBU (Markaziy bank) dan avtomatik olish</label><div class="row"><button class="btn" type="submit">Saqlash</button></div></form></section></div>';
   }
+  B.acts.soztab = function (el) { ST.sozTab = el.getAttribute('data-v'); };
   var PF = ['name', 'holder', 'number', 'url', 'note'];
   function payRows() { return ST.payRows || (ST.payRows = (D().settings.pay || []).map(function (p) { return Object.assign({}, p); })); }
   function paySync() { var rows = payRows(); return rows.map(function (r, i) { var o = Object.assign({}, r); PF.forEach(function (f) { var v = ST.f['pm_' + i + '_' + f]; if (v !== undefined) o[f] = v; }); return o; }); }

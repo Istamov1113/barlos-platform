@@ -437,4 +437,11 @@ reports.confHook = c => {
   c.rate.profitTax = k.rates.profit;
   if (boss) c.co.head = boss.name;
 };
-module.exports = { mount, build, engine, getCfg, saveCfg, auto, PLAN, BAL, pdfDoc, DEF };
+/* Hisobot sozlamalarida (Kompaniya va stavkalar) kiritilgan ustav kapitali va foyda solig'i buxgalteriyaga ham yoziladi — bitta qiymat */
+function syncFromRep(o) {
+  const raw = db.get('acx', 'cfg') || { id: 'cfg' }, c = getCfg(); let ch = false;
+  if (o && o.own && +o.own.charter > 0 && +o.own.charter !== c.charter.amount) { c.charter = Object.assign({}, c.charter, { amount: +o.own.charter }); ch = true; }
+  if (o && o.rate && o.rate.profitTax != null && +o.rate.profitTax !== c.rates.profit && +o.rate.profitTax >= 0 && +o.rate.profitTax <= 50) { c.rates = Object.assign({}, c.rates, { profit: +o.rate.profitTax }); ch = true; }
+  if (ch) db.put('acx', Object.assign({ id: 'cfg', feeStart: raw.feeStart || '' }, c));
+}
+module.exports = { syncFromRep, mount, build, engine, getCfg, saveCfg, auto, PLAN, BAL, pdfDoc, DEF };
