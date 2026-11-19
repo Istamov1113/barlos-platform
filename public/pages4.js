@@ -10,7 +10,7 @@
   function N(v) { if (v == null || isNaN(v)) return '—'; var r = Math.round(v); return (r < 0 ? '−' : '') + B.fi(Math.abs(r)); }
   function P(v) { return v == null ? '—' : (Math.round(v * 100) / 100) + '%'; }
   function tdy() { var d = new Date(Date.now() + 5 * 3600e3); return d.toISOString().slice(0, 10); }
-  function mname(k) { return MN[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4); }
+  function mname(k) { return k.charAt(5) === 'Q' ? k.slice(6) + '-chorak ' + k.slice(0, 4) : MN[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4); }
   function qs() { return 'year=' + X.year + '&upto=' + X.upto; }
   function dmy(s) { return s ? s.slice(8, 10) + '.' + s.slice(5, 7) + '.' + s.slice(0, 4) : '—'; }
 
@@ -53,7 +53,7 @@
       '<div class="stats" style="margin-top:10px">' + stat('Jami aktiv (balans)', N(s.assets)) + stat('Pul: asosiy schyot', N(s.cashMain)) + stat('Pul: Rahbar schyoti 5110-R', N(s.cashMgr)) + stat('Foyda solig‘i', N(s.tax)) + '</div></section>';
     h += '<section class="card stack"><h2>Oylar bo‘yicha</h2><div class="tw"><table><thead><tr><th>Oy</th><th class="n">Tushum</th><th class="n">Ish haqi + ijt. to‘lov</th><th class="n">Shartnomalar</th><th class="n">Rahbar ulushi</th><th class="n">Foyda (soliqqacha)</th></tr></thead><tbody>' +
       rep.monthly.map(function (m) { return '<tr><td>' + mname(m.k) + '</td><td class="n">' + N(m.revenue) + '</td><td class="n">' + N(m.payroll) + '</td><td class="n">' + N(m.contracts) + '</td><td class="n">' + N(m.manager) + '</td><td class="n ' + (m.profit >= 0 ? 'good' : 'bad') + '">' + N(m.profit) + '</td></tr>'; }).join('') + '</tbody></table></div></section>';
-    h += '<section class="card stack"><h2>Daromad manbai</h2><p class="muted">Tushum mijoz hisoblari bo‘yicha avtomatik hisoblanadi: boshqaruv haqi ' + P(rep.feeRates.mgmt) + ' (yillik, o‘rtacha aktivdan), muvaffaqiyat haqi ' + P(rep.feeRates.success) + ' (chorak oxirida, hurdle ' + P(rep.feeRates.hurdle) + '). Stavkalar <b>Hisobotlar → Sozlamalar</b> bo‘limidagi haq stavkalaridan olinadi.</p></section>';
+    h += '<section class="card stack"><h2>Daromad manbai</h2><p class="muted">Tushum — har chorak oxirida mijoz hisoblaridan HAQIQATDA undirilgan xizmat haqi: boshqaruv haqi ' + P(rep.feeRates.mgmt) + ' (yillik, o‘rtacha aktivdan), muvaffaqiyat haqi ' + P(rep.feeRates.success) + ' (hurdle ' + P(rep.feeRates.hurdle) + ', zarar keyingi foyda bilan qoplanadi). Choraklar <b>Hisobotlar → Chorakni yopish</b> bo‘limida yopiladi. Stavkalar <b>Hisobotlar → Sozlamalar</b> bo‘limidagi haq stavkalaridan olinadi.</p></section>';
     return warnHtml(rep) + h + checksHtml(rep);
   }
   function tBalans(rep) {
@@ -70,9 +70,9 @@
   function tRahbar(rep) {
     var m = rep.cfg.mgr, tb = {}; rep.tb.forEach(function (r) { tb[r.code] = r; });
     var t = rep.summary.mgr;
-    var h = '<section class="card stack"><h2>Rahbar ulushi: ' + m.pct + '%' + (rep.boss ? ' · ' + esc(rep.boss.name) : '') + '</h2><p class="muted">Baza: <b>' + (m.base === 'revenue' ? 'tushum' : 'bonusgacha foyda (soliqqacha)') + '</b>, yil boshidan kumulyativ. Har oy ulush hisoblanadi, soliqlar ushlanadi va netto qism asosiy schyotdan <b>maxsus 5110-R hisobraqamiga</b> o‘tkaziladi. Rahbarga to‘lov faqat shu hisobraqamdan amalga oshiriladi. Zarar oylarida hisoblangan ulush qaytarib olinmaydi: yangi ulush kumulyativ foyda avvalgi eng yuqori darajadan oshgandan keyin hisoblanadi.</p>' +
+    var h = '<section class="card stack"><h2>Rahbar ulushi: ' + m.pct + '%' + (rep.boss ? ' · ' + esc(rep.boss.name) : '') + '</h2><p class="muted">Baza: <b>' + (m.base === 'revenue' ? 'tushum' : 'bonusgacha foyda (soliqqacha)') + '</b>, yil boshidan kumulyativ. Ulush har CHORAK oxirida hisoblanadi (xizmat haqi undirilib hisobot topshirilgan kuni), soliqlar ushlanadi va netto qism asosiy schyotdan <b>maxsus 5110-R hisobraqamiga</b> o‘tkazilib shu kuni to‘lanadi. Rahbarga to‘lov faqat shu hisobraqamdan amalga oshiriladi. Zarar choraklarida hisoblangan ulush qaytarib olinmaydi: yangi ulush kumulyativ foyda avvalgi eng yuqori darajadan oshgandan keyin hisoblanadi.</p>' +
       '<div class="stats">' + stat('Maxsus schyot 5110-R qoldig‘i', N(tb['5110-R'].close)) + stat('Rahbar ulushi qarzi 6710-R', N(tb['6710-R'].close)) + stat('Yil bo‘yicha ulush (brutto)', N(t.share)) + stat('Netto (qo‘liga)', N(t.net)) + '</div>';
-    h += '<div class="tw"><table><thead><tr><th>Oy</th><th class="n">Baza (oy)</th><th class="n">Baza (kumulyativ)</th><th class="n">Ulush (brutto)</th><th class="n">JShDS</th><th class="n">INPS</th><th class="n">Netto → 5110-R</th><th class="n">Ish beruvchi to‘lovi</th><th>Holat</th></tr></thead><tbody>' +
+    h += '<div class="tw"><table><thead><tr><th>Chorak</th><th class="n">Baza (chorak)</th><th class="n">Baza (kumulyativ)</th><th class="n">Ulush (brutto)</th><th class="n">JShDS</th><th class="n">INPS</th><th class="n">Netto → 5110-R</th><th class="n">Ish beruvchi to‘lovi</th><th>Holat</th></tr></thead><tbody>' +
       rep.mgr.map(function (x) { return '<tr><td>' + mname(x.k) + '</td><td class="n">' + N(x.base) + '</td><td class="n">' + N(x.cum) + '</td><td class="n"><b>' + N(x.share) + '</b></td><td class="n">' + N(x.jshds) + '</td><td class="n">' + N(x.inps) + '</td><td class="n">' + N(x.net) + '</td><td class="n">' + N(x.yait) + '</td><td>' + (x.paid ? '<span class="good">to‘langan</span>' : '<span class="muted">hisoblangan</span>') + '</td></tr>'; }).join('') +
       '<tr style="font-weight:600"><td>Jami</td><td></td><td></td><td class="n">' + N(t.share) + '</td><td class="n">' + N(t.jshds) + '</td><td class="n">' + N(t.inps) + '</td><td class="n">' + N(t.net) + '</td><td class="n">' + N(t.yait) + '</td><td></td></tr></tbody></table></div>' +
       '<p class="muted mini">Huquqiy eslatma: ulush bonus sifatida mehnat haqi soliqlariga tortiladi. Ulush tartibi mehnat shartnomasi va Kuzatuv kengashi/umumiy yig‘ilish qarori bilan tasdiqlansin. Sozlamalarda foiz va bazani o‘zgartirish mumkin.</p></section>';
@@ -103,7 +103,7 @@
     return h;
   }
   function maoshTable(rep, p) {
-    var mg = rep.mgr.filter(function (x) { return x.k === p.k; })[0] || null, rows = p.rows.map(function (r) {
+    var mm = +p.k.slice(5, 7), qk = mm % 3 === 0 ? p.k.slice(0, 4) + '-Q' + (mm / 3) : '', mg = qk ? (rep.mgr.filter(function (x) { return x.k === qk; })[0] || null) : null, rows = p.rows.map(function (r) {
       var sh = (r.role === 'rahbar' && mg) ? mg : null, g = r.gross + (sh ? sh.share : 0), j = r.jshds + (sh ? sh.jshds : 0), i = r.inps + (sh ? sh.inps : 0);
       return '<tr><td>' + esc(r.name) + (r.role === 'rahbar' ? ' <span class="pill p-b">Rahbar</span>' : '') + '</td><td class="n">' + N(r.gross) + '</td><td class="n">' + (sh ? N(sh.share) : '') + '</td><td class="n">' + N(g) + '</td><td class="n">' + N(j) + '</td><td class="n">' + N(i) + '</td><td class="n"><b>' + N(g - j - i) + '</b></td></tr>';
     }).join('');
@@ -237,7 +237,7 @@
       { name: 'Moliyaviy natija', cols: [{ h: 'Ko‘rsatkich', w: 60 }, { h: 'Qator', w: 8 }, { h: 'Daromad (foyda)', w: 18, t: 'n' }, { h: 'Xarajat (zarar)', w: 18, t: 'n' }], rows: rep.pnl.map(function (r) { return [r.label, r.code, r.inc, r.exp]; }) },
       { name: 'Jurnal', cols: [{ h: '№', w: 7, t: 'n' }, { h: 'Sana', w: 12 }, { h: 'Hujjat', w: 16 }, { h: 'Izoh', w: 50 }, { h: 'Debet', w: 9 }, { h: 'Kredit', w: 9 }, { h: 'Summa', w: 18, t: 'n' }], rows: rep.journal.map(function (e) { return [e.n, e.d, e.doc, e.note, e.dt, e.kt, e.amt]; }) },
       { name: 'Aylanma', cols: [{ h: 'Kod', w: 9 }, { h: 'Nomi', w: 50 }, { h: 'Boshiga', w: 16, t: 'n' }, { h: 'Debet', w: 16, t: 'n' }, { h: 'Kredit', w: 16, t: 'n' }, { h: 'Oxiriga', w: 16, t: 'n' }], rows: rep.tb.map(function (r) { return [r.code, r.name, r.open, r.dt, r.kt, r.close]; }) },
-      { name: 'Rahbar ulushi', cols: [{ h: 'Oy', w: 10 }, { h: 'Baza', w: 16, t: 'n' }, { h: 'Kumulyativ', w: 16, t: 'n' }, { h: 'Ulush', w: 16, t: 'n' }, { h: 'JShDS', w: 14, t: 'n' }, { h: 'INPS', w: 12, t: 'n' }, { h: 'Netto 5110-R', w: 16, t: 'n' }, { h: 'Holat', w: 12 }], rows: rep.mgr.map(function (x) { return [x.k, x.base, x.cum, x.share, x.jshds, x.inps, x.net, x.paid ? 'to‘langan' : 'hisoblangan']; }) },
+      { name: 'Rahbar ulushi', cols: [{ h: 'Chorak', w: 14 }, { h: 'Baza', w: 16, t: 'n' }, { h: 'Kumulyativ', w: 16, t: 'n' }, { h: 'Ulush', w: 16, t: 'n' }, { h: 'JShDS', w: 14, t: 'n' }, { h: 'INPS', w: 12, t: 'n' }, { h: 'Netto 5110-R', w: 16, t: 'n' }, { h: 'Holat', w: 12 }], rows: rep.mgr.map(function (x) { return [x.k, x.base, x.cum, x.share, x.jshds, x.inps, x.net, x.paid ? 'to‘langan' : 'hisoblangan']; }) },
       { name: 'Maosh', cols: [{ h: 'Oy', w: 10 }, { h: 'F.I.Sh.', w: 36 }, { h: 'Oklad', w: 16, t: 'n' }, { h: 'JShDS', w: 14, t: 'n' }, { h: 'INPS', w: 12, t: 'n' }, { h: 'Netto', w: 16, t: 'n' }], rows: [].concat.apply([], rep.payroll.map(function (p) { return p.rows.map(function (r) { return [p.k, r.name, r.gross, r.jshds, r.inps, r.net]; }); })) },
       { name: 'Shartnomalar', cols: [{ h: 'Kod', w: 10 }, { h: 'Kontragent', w: 30 }, { h: 'Predmet', w: 36 }, { h: 'Jami', w: 16, t: 'n' }, { h: 'Hisoblangan', w: 16, t: 'n' }, { h: 'To‘langan', w: 16, t: 'n' }, { h: 'Qarz', w: 16, t: 'n' }], rows: rep.contracts.map(function (r) { return [r.code, r.party, r.subject, r.total, r.accrued, r.paid, r.debt]; }) }
     ];

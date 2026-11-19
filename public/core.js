@@ -13,7 +13,7 @@
   };
   var GKEYS = Object.keys(GROUPS);
   var STATUS = { STRONG_SELL: 'STRONG SELL', SELL: 'SELL', HOLD: 'HOLD', BUY: 'BUY', STRONG_BUY: 'STRONG BUY' };
-  var TYPES = ['BUY', 'SELL', 'DEPOZIT', 'WITHDRAW', 'FOIZ', 'DIVIDEND', 'KUPON', 'TRANSFER'];
+  var TYPES = ['BUY', 'SELL', 'DEPOZIT', 'WITHDRAW', 'FOIZ', 'DIVIDEND', 'KUPON', 'TRANSFER', 'FEE'];   /* FEE = chorak oxirida undiriladigan xizmat haqi (pul oqimi emas, natijani kamaytiradi) */
   var BENCHC = { rate: 25, pay: 'none' }, BENCH_RATE = 1.25, FEE = 0.10, AUTO_FEE = 0.001, MILLIY_FEE = 0.0099;
   var SET = { nBase: 3, nHold: 5, nSell: 7 };
 
@@ -58,6 +58,7 @@
         function cu(uzs) { return uzs / ((fxOf(S, st.curr) || 1) * (st.price || 1)); }
         if (t.type === 'DEPOZIT') { add(x.id, t.amount); flows.push({ t: t.t, uzs: t.uzs || 0 }); }
         else if (t.type === 'WITHDRAW') { add(x.id, -t.amount); flows.push({ t: t.t, uzs: -(t.uzs || 0) }); }
+        else if (t.type === 'FEE') { add(x.id, -t.amount); }
         else if (t.type === 'TRANSFER') { add(x.id, -t.amount - (t.xfee || 0)); if (t.to) add(t.to, t.toAmount || 0); }
         else if (t.type === 'BUY') {
           var a0 = av[x.id] || 0, q0 = aq[x.id] || 0;
@@ -168,7 +169,7 @@
     var d = new Date(now || Date.now()), qn = Math.floor(d.getMonth() / 3), qs = new Date(d.getFullYear(), qn * 3, 1).getTime();
     var inv = V.flows.filter(function (f) { return f.t >= qs; }).reduce(function (s, f) { return s + f.uzs; }, 0);
     var prev = +V.acc.prevQ || 0, profit = V.T - (inv + prev);
-    return { label: (qn + 1) + '-chorak', inv: inv, prev: prev, profit: profit, fee: Math.max(0, profit) * FEE };
+    return { label: (qn + 1) + '-chorak', inv: inv, prev: prev, profit: profit };
   }
 
   function decide(side, status, st) {
@@ -244,7 +245,7 @@
     if (TYPES.indexOf(rec.type) < 0) return { ok: false, error: 'Noma’lum tranzaksiya turi.' };
     rec.amount = +rec.amount; rec.price = rec.price === '' || rec.price == null ? NaN : +rec.price;
     if (!(rec.amount > 0) || !isFinite(rec.amount)) return { ok: false, error: 'Miqdor musbat son bo’lishi kerak.' };
-    if (isNaN(rec.price)) { if (rec.type === 'TRANSFER') rec.price = x.price || 1; else if (x.group === 'naqd' || x.group === 'omonat' || rec.type === 'DEPOZIT' || rec.type === 'WITHDRAW' || rec.type === 'KUPON') rec.price = (x.group === 'naqd' || x.group === 'omonat') ? 1 : (x.price || 0); else return { ok: false, error: 'Narx kiritilmagan.' }; }
+    if (isNaN(rec.price)) { if (rec.type === 'TRANSFER') rec.price = x.price || 1; else if (x.group === 'naqd' || x.group === 'omonat' || rec.type === 'DEPOZIT' || rec.type === 'WITHDRAW' || rec.type === 'FEE' || rec.type === 'KUPON') rec.price = (x.group === 'naqd' || x.group === 'omonat') ? 1 : (x.price || 0); else return { ok: false, error: 'Narx kiritilmagan.' }; }
     if (rec.price < 0) return { ok: false, error: 'Narx manfiy bo’lmaydi.' };
     if ((rec.type === 'BUY' || rec.type === 'SELL') && !(rec.price > 0)) return { ok: false, error: 'Narx musbat bo’lishi kerak.' };
     var fx = fxOf(S, x.curr); if (!(fx > 0)) return { ok: false, error: x.curr + ' kursi kiritilmagan (Sozlamalar).' };
@@ -253,7 +254,7 @@
     if (!opts.skipBalance) {
       var V = view(S, acc), it = V.items.filter(function (i) { return i.x.id === x.id; })[0], hq = it ? it.qty : 0;
       if (rec.type === 'TRANSFER') { var to = am[rec.to]; if (!to || to.id === x.id) return { ok: false, error: 'Qabul qiluvchi aktiv noto’g’ri.' }; rec.toAmount = +rec.toAmount; if (!(rec.toAmount > 0)) return { ok: false, error: 'Qabul qilinadigan miqdor noto’g’ri.' }; }
-      if ((rec.type === 'SELL' || rec.type === 'WITHDRAW') && rec.amount > hq + 1e-9) return { ok: false, error: 'Hisobda yetarli miqdor yo’q (bor: ' + hq + ').' };
+      if ((rec.type === 'SELL' || rec.type === 'WITHDRAW' || rec.type === 'FEE') && rec.amount > hq + 1e-9) return { ok: false, error: 'Hisobda yetarli miqdor yo’q (bor: ' + hq + ').' };
       rec.xfee = +rec.xfee || 0; if (rec.type === 'TRANSFER' && rec.amount + rec.xfee > hq + 1e-9) return { ok: false, error: 'Hisobda yetarli miqdor yo’q (bor: ' + hq + ').' };
       var cash = settleAsset(S, x, rec);
       if (rec.type === 'BUY' && cash && rec.cash !== false) {

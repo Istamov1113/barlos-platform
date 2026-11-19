@@ -15,6 +15,7 @@ const profile = require('./src/profile');
 const hist = require('./src/hist');
 const tabular = require('./src/tabular');
 const accounting = require('./src/accounting');
+const quarters = require('./src/quarters');
 const Core = require('./public/core.js');
 const Ind = require('./public/indicators.js');
 
@@ -58,7 +59,9 @@ function loadS() {
   db.db.prepare('SELECT id,name,email FROM users').all().forEach(u => { users[u.id] = u; });
   const accounts = db.all('accounts').map(a => Object.assign(a, { owner: (users[a.uid] && (users[a.uid].name || users[a.uid].email)) || a.uid }));
   Core.SET.nBase = st.nBase; Core.SET.nHold = st.nHold; Core.SET.nSell = st.nSell; Core.BENCHC.rate = st.benchRate != null ? st.benchRate : 25; Core.BENCHC.pay = st.benchPay || 'none';
-  return { fx: st.fx, assets: db.all('assets'), accounts, tx: db.all('tx'), stoch: stochMap() };
+  const S = { fx: st.fx, assets: db.all('assets'), accounts, tx: db.all('tx'), stoch: stochMap() };
+  quarters.fillPrevQ(S);      /* oldingi chorak oxiridagi balans — avtomatik */
+  return S;
 }
 const now = () => Date.now();
 
@@ -232,6 +235,7 @@ app.get('/api/state', ANY, wrap((req, res) => {
   let accounts = db.all('accounts'), tx = db.all('tx'), wd = db.all('wd');
   const names = {}; db.db.prepare('SELECT id,name,email FROM users').all().forEach(x => { names[x.id] = x.name || x.email; });
   accounts.forEach(a => { a.owner = names[a.uid] || a.uid; });
+  quarters.fillPrevQ({ fx: st.fx, assets: db.all('assets'), accounts, tx });      /* oldingi chorak oxiridagi balans — avtomatik */
   let dep = db.all('dep');
   if (!isStaff) { accounts = accounts.filter(a => a.uid === u.id); const ids = new Set(accounts.map(a => a.id)); tx = tx.filter(t => ids.has(t.acc) && t.status === 'Bajarildi').map(t => { const c = Object.assign({}, t); delete c.edits; delete c.voidReason; return c; }); wd = wd.filter(w => ids.has(w.acc)); dep = dep.filter(w => ids.has(w.acc)); }
   const sessions = sessionsOf(u.id).map(s => Object.assign(s, { cur: s.id === req.sid }));
@@ -324,7 +328,6 @@ app.post('/api/accounts/:id', A, wrap((req, res) => {
   const a = db.get('accounts', req.params.id); if (!a) throw bad('Hisob topilmadi.', 404);
   const b = req.body || {};
   if (b.targets) { const t = {}; Object.keys(b.targets).forEach(k => { const v = b.targets[k]; if (v === '' || v == null) return; const n = +v; if (!(n >= 0 && n <= 100)) throw bad('Ulush 0–100 oralig‘ida bo‘lsin.'); t[k] = n; }); a.targets = t; }
-  if (b.prevQ !== undefined) a.prevQ = +b.prevQ || 0;
   if (b.archived !== undefined) a.archived = !!b.archived;
   db.put('accounts', a); res.json({ ok: true });
 }));
@@ -422,6 +425,52 @@ app.post('/api/transfers', A, wrap((req, res) => {
     msg = p.from.sym + ' → ' + p.to.sym + ': ' + p.rows.length + ' ta hisobdan jami ' + p.T + ' ' + p.from.sym + ' (' + p.rows.reduce((q, r) => q + r.toAmount, 0).toFixed(4) + ' ' + p.to.sym + '), komissiya ' + +p.rows.reduce((q, r) => q + r.fee, 0).toFixed(4) + ' ' + p.from.sym + ', bitim ' + blk;
   });
   req.ad = msg; res.json({ ok: true, msg });
+}));
+
+/* ---------------- Yangi amal (2.14.0): kirim, chiqim, xarid, sotish, foiz/dividend — bitta joydan, bir yoki ko'p hisobga ---------------- */
+const AMAL = { in: 'DEPOZIT', out: 'WITHDRAW', buy: 'BUY', sell: 'SELL', inc: 'FOIZ' };
+function amalPlan(S, b) {
+  const kind = String(b.kind || ''); if (!AMAL[kind]) throw bad('Amal turini tanlang.');
+  const type = kind === 'inc' ? (['FOIZ', 'DIVIDEND', 'KUPON'].indexOf(b.itype) >= 0 ? b.itype : 'FOIZ') : AMAL[kind];
+  const am = Core.assetMap(S), cash = Core.cashAsset(S);
+  const aid = b.aid || ((kind === 'in' || kind === 'out') && cash ? cash.id : ''), x = am[aid]; if (!x) throw bad('Aktivni tanlang.');
+  const t = +b.t || now(), ids = Array.isArray(b.accs) ? b.accs : [], accs = S.accounts.filter(a => !a.archived && ids.indexOf(a.id) >= 0);
+  if (!accs.length) throw bad('Hisobni tanlang.');
+  const dec = x.group === 'naqd' && x.curr === 'UZS' ? 2 : 8, rd = (v, d) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
+  let rows;
+  if (Array.isArray(b.rows) && b.rows.length) {           /* qo'lda: har hisobga alohida miqdor */
+    rows = b.rows.map(r => ({ acc: accs.filter(a => a.id === r.acc)[0], amount: +r.amount })).filter(r => r.acc && r.amount > 0);
+  } else {                                                /* umumiy miqdor — hisoblarga ulushiga qarab bo'linadi */
+    const total = +b.total; if (!(total > 0)) throw bad('Miqdor musbat bo‘lsin.');
+    const w = accs.map(a => { const V = Core.view(S, a), it = V.items.filter(i => i.x.id === x.id)[0]; return accs.length === 1 ? 1 : (kind === 'sell' || kind === 'inc' || kind === 'out') ? (it && it.qty > 0 ? it.qty : 0) : Math.max(0, V.T); });
+    const sum = w.reduce((q, v) => q + v, 0); if (!(sum > 0)) throw bad('Taqsimlash uchun tanlangan hisoblarda tegishli qoldiq yo‘q.');
+    rows = accs.map((a, i) => ({ acc: a, amount: rd(total * w[i] / sum, dec) })).filter(r => r.amount > 0);
+    const big = rows.slice().sort((p, q) => q.amount - p.amount)[0], diff = rd(total - rows.reduce((q, r) => q + r.amount, 0), dec); if (big && diff) big.amount = rd(big.amount + diff, dec);
+  }
+  if (!rows.length) throw bad('Kiritiladigan miqdor nolga teng.');
+  const price = b.price !== undefined && b.price !== '' && b.price != null ? +b.price : (x.group === 'naqd' ? 1 : x.price);
+  return { kind, type, x, t, rows, price, input: r => ({ acc: r.acc.id, aid: x.id, type, t, amount: r.amount, price, fee: b.fee, feeAsset: b.feeAsset, settle: b.settle || undefined, cash: b.nocash ? false : undefined, note: b.note }) };
+}
+const PREVIEW_STOP = { preview: true };
+function amalRun(b, who, commit) {
+  const out = []; let blk = null;
+  try {
+    db.tx(() => {
+      const S = loadS(), p = amalPlan(S, b); blk = 'B' + (10000 + db.seq('blk'));
+      p.rows.forEach(r => {
+        try { const rec = writeTx(S, p.input(r), who, 'Amal', blk); out.push({ acc: r.acc.id, owner: r.acc.owner, kind: r.acc.kind, amount: rec.amount, price: rec.price, fee: rec.fee || 0, feeAsset: rec.feeAsset || '', sym: p.x.sym, type: p.type, ok: true, id: rec.id }); }
+        catch (e) { out.push({ acc: r.acc.id, owner: r.acc.owner, kind: r.acc.kind, amount: r.amount, sym: p.x.sym, type: p.type, ok: false, error: e.message }); }
+      });
+      if (!commit) throw PREVIEW_STOP;                    /* ko'rib chiqish: hech narsa saqlanmaydi */
+      const bads = out.filter(o => !o.ok); if (bads.length) throw bad(bads.map(o => o.owner + ': ' + o.error).join(' · '));
+    });
+  } catch (e) { if (e !== PREVIEW_STOP) throw e; }
+  return { blk, rows: out, ok: out.every(o => o.ok), total: out.reduce((q, o) => q + (o.ok ? o.amount : 0), 0) };
+}
+app.post('/api/amal/preview', AO, wrap((req, res) => res.json(amalRun(req.body || {}, 'Operator', false))));
+app.post('/api/amal', AO, wrap((req, res) => {
+  const b = req.body || {}, who = req.user.role === 'admin' ? 'Admin' : 'Operator: ' + (req.user.name || req.user.email), r = amalRun(b, who, true);
+  req.ad = 'Amal ' + b.kind + ' · ' + r.rows.length + ' ta hisob · jami ' + r.total + ' · bitim ' + r.blk; res.json(r);
 }));
 
 /* ---------------- Depozit so'rovlari (mijoz to'laydi, admin tasdiqlaydi) ---------------- */
@@ -552,7 +601,7 @@ app.post('/api/settings', A, wrap((req, res) => {
     o.tax.vatPayer = ['Ha', 'Yo‘q', 'Tekshiring'].indexOf((r.tax || {}).vatPayer) >= 0 ? r.tax.vatPayer : 'Tekshiring'; o.tax.vatExempt = ['Ha', 'Yo‘q', 'Tekshiring'].indexOf((r.tax || {}).vatExempt) >= 0 ? r.tax.vatExempt : 'Tekshiring';
     o.tax.direct = num((r.tax || {}).direct || 0, 0, 1e15, 'Xarajat'); o.tax.general = num((r.tax || {}).general || 0, 0, 1e15, 'Xarajat');
     Object.keys(r.f8 || {}).slice(0, 20).forEach(k => { const m = r.f8[k] || {}; if (['Ha', 'Yo‘q', 'Qisman', 'N/A'].indexOf(m.status) >= 0 || m.note) o.f8[String(+k)] = { status: ['Ha', 'Yo‘q', 'Qisman', 'N/A'].indexOf(m.status) >= 0 ? m.status : '', note: str(m.note, 200) }; });
-    s.rep = o;
+    s.rep = o; accounting.syncFromRep(o);
   }
   if (b.priceMin !== undefined) { const v = +b.priceMin; if (!(v >= 1 && v <= 1440)) throw bad('Interval 1–1440 daqiqa.'); s.priceMin = v; scheduleRefresh(); }
   if (b.pay !== undefined) {
@@ -561,7 +610,7 @@ app.post('/api/settings', A, wrap((req, res) => {
     s.pay = b.pay.slice(0, 10).map((p, i) => ({ id: str(p.id, 24) || ('P' + (i + 1) + crypto.randomBytes(2).toString('hex')), name: str(p.name, 60), holder: str(p.holder, 80), number: str(p.number, 60), url: /^https?:\/\//i.test(p.url || '') ? str(p.url, 400) : '', note: str(p.note, 300) })).filter(p => p.name);
   }
   if (b.uzseHist !== undefined) s.uzseHist = /^https?:\/\//i.test(b.uzseHist || '') ? String(b.uzseHist).trim().slice(0, 600) : '';
-  const chg = !!s.stochChg; delete s.stochChg; db.put('settings', s); if (chg) stochRun().catch(e => console.error('stoch:', e.message));
+  const chg = !!s.stochChg; delete s.stochChg; db.put('settings', s); if (b.autoRel) { try { autoDeposits(); } catch (e) { console.error(e.message); } } if (chg) stochRun().catch(e => console.error('stoch:', e.message));
   res.json({ ok: true });
 }));
 app.post('/api/stoch/refresh', A, wrap(async (req, res) => { res.json({ stoch: await stochRun() }); }));
@@ -893,6 +942,18 @@ app.post('/api/deposits/accept-group', AO, wrap((req, res) => {
   req.ad = x.sym + ' ' + date + ': ' + ids.length + ' ta mijoz, jami ' + todo.reduce((s, i) => s + i.amt, 0); res.json({ ok: true, ids });
 }));
 
+/* "Avtomatik bozorga chiqarish" yoqilgan bo'lsa: vaqti kelgan omonat foizi signallari tasdiqlashsiz mijozlarga taqsimlanadi (eng eski sanadan boshlab) */
+function autoDeposits() {
+  if (!settings().autoRel) return 0;
+  const S = loadS(), all = Core.depDue(S, now(), { ahead: 0, back: 400 }), keys = {}; let n = 0;
+  all.forEach(x => { keys[x.aid + '|' + x.date] = { aid: x.aid, date: x.date }; });
+  Object.keys(keys).map(k => keys[k]).sort((a, b) => a.date < b.date ? -1 : 1).forEach(g => {
+    const todo = all.filter(x => x.aid === g.aid && x.date === g.date && !x.done && x.amt > 0); if (!todo.length) return;
+    if (all.some(x => x.aid === g.aid && !x.done && x.amt > 0 && x.date < g.date)) return;
+    try { db.tx(() => { const blk = 'B' + (10000 + db.seq('blk')); todo.forEach(it => { depWrite(S, it, 'Tizim (avtomatik)', blk); n++; }); }); } catch (e) { console.error('omonat avto:', e.message); }
+  });
+  return n;
+}
 /* ---------------- Obligatsiya: kupon jadvali, yig'ilgan foiz, YTM signali, kupon yozuvlari ---------------- */
 const ISO = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && isFinite(Core.dayNum(String(v)));
 function cleanBond(b) {
@@ -950,7 +1011,7 @@ function bondLoop() {
 
 chat.mount(app, { ANY, wrap, bad, AU });
 profile.mount(app, { ANY, wrap, bad, AU });
-accounting.mount(app, { A, wrap, bad, AU, loadS, settings });
+accounting.mount(app, { A, wrap, bad, AU, loadS, settings, writeTx });
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], maxAge: '5m' }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Topilmadi.' }));
 
@@ -963,7 +1024,7 @@ function bootAdmin() {
 }
 const PORT = +(process.env.PORT || 3000);
 if (require.main === module) {
-  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
+  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
   /* uzse.uz kunlik yangilash: har 30 daqiqada (havola sozlangan bo'lsa); seans 16:00 dan keyin ham ishlaydi */
   setInterval(() => syncAllHist().catch(e => console.error('tarix yangilash:', e.message)), 5 * 60e3); setTimeout(() => { db.all('assets').forEach(x => seedPrice(x.id)); syncAllHist().catch(() => { }); }, 15000);
   app.listen(PORT, () => {

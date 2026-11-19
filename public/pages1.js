@@ -121,7 +121,7 @@
   function adminHome() {
     var accs = D().accounts.filter(function (a) { return !a.archived; }), rows = accs.map(function (a) { var s = summary(a), u = (D().users || []).filter(function (x) { return x.id === a.uid; })[0]; return { a: a, s: s, u: u }; });
     var tot = rows.reduce(function (t, r) { t.T += r.s.T; t.dep += r.s.dep; return t; }, { T: 0, dep: 0 });
-    var h = '<div class="stack"><section class="card"><div class="stats"><div class="stat"><small>Jami boshqaruvdagi mablag‘</small><b>' + money(tot.T) + '</b></div><div class="stat"><small>Jami kiritilgan</small><b>' + money(tot.dep) + '</b></div><div class="stat"><small>Jami foyda</small><b class="' + (tot.T - tot.dep >= 0 ? 'good' : 'bad') + '">' + money(tot.T - tot.dep) + '</b></div><div class="stat"><small>Hisoblar soni</small><b>' + accs.length + '</b></div></div></section>';
+    var h = '<div class="stack">' + (B.todoCard ? B.todoCard() : '') + '<section class="card"><div class="stats"><div class="stat"><small>Jami boshqaruvdagi mablag‘</small><b>' + money(tot.T) + '</b></div><div class="stat"><small>Jami kiritilgan</small><b>' + money(tot.dep) + '</b></div><div class="stat"><small>Jami foyda</small><b class="' + (tot.T - tot.dep >= 0 ? 'good' : 'bad') + '">' + money(tot.T - tot.dep) + '</b></div><div class="stat"><small>Hisoblar soni</small><b>' + accs.length + '</b></div></div></section>';
     h += '<section class="card"><div class="row sb"><h2>Mijozlar va hisoblar</h2><span class="muted">Qatorni bosing: hisobni ochish</span></div>';
     if (!rows.length) return h + empty('Hali mijozlar yo‘q', 'Mijoz o‘zi “Hisob ochish” orqali ro‘yxatdan o‘tadi. Ular shu yerda paydo bo‘ladi.') + '</section></div>';
     rows.sort(function (x, y) { return y.s.T - x.s.T; });
@@ -131,19 +131,19 @@
       h += '<tr class="rowlink" data-act="openacc" data-v="' + r.a.id + '"><td><b>' + esc(r.a.owner) + '</b><div class="muted mini">' + esc(r.u ? r.u.email : '') + '</div></td><td>' + esc(r.a.name) + '</td><td class="n">' + money(r.s.dep) + '</td><td class="n">' + money(r.s.T) + '</td><td class="n ' + (r.s.pl >= 0 ? 'good' : 'bad') + '">' + (r.s.pl >= 0 ? '+' : '') + money(r.s.pl) + '</td><td class="n ' + (pp == null ? '' : pp >= 0 ? 'good' : 'bad') + '">' + (pp == null ? '—' : sgn(pp, 2)) + '</td><td class="n">' + (r.s.ratio != null ? r.s.ratio.toFixed(3) : '—') + '</td></tr>';
     });
     h += '<tr><td><b>Jami</b></td><td></td><td class="n"><b>' + money(tot.dep) + '</b></td><td class="n"><b>' + money(tot.T) + '</b></td><td class="n"><b>' + money(tot.T - tot.dep) + '</b></td><td></td><td></td></tr>';
-    return h + '</tbody></table></div></section></div>';
+    return h + '</tbody></table></div></section>' + (B.isAdmin() && B.usersCard ? B.usersCard() : '') + '</div>';
   }
   B.acts.openacc = function (el) { ST.accId = el.getAttribute('data-v'); ST.tab.acc = 'umumiy'; ST.page = 'bosh'; window.scrollTo(0, 0); };
   B.acts.backacc = function () { ST.accId = null; };
 
   /* ----- hisob sahifasi (admin/operator) ----- */
   function accPage(acc) {
-    var tabs = [['umumiy', 'Umumiy'], ['portfel', 'Portfel'], ['tranz', 'Tranzaksiyalar'], ['ulush', 'Maqsadli ulushlar'], ['kirit', 'Bitim kiritish']], cur = ST.tab.acc || 'umumiy';
+    var tabs = [['umumiy', 'Umumiy'], ['portfel', 'Portfel'], ['tranz', 'Tranzaksiyalar'], ['ulush', 'Maqsadli ulushlar'], ['kirit', 'Yangi amal']], cur = ST.tab.acc || 'umumiy';
     if (B.isAdmin()) tabs.push(['hsoz', 'Hisob sozlamalari']);
     var h = '<div class="stack"><div class="row sb"><div class="row"><button class="btn ghost small" data-act="backacc">← Barcha mijozlar</button><h2>' + esc(acc.owner) + ' · ' + esc(acc.name) + '</h2></div></div>';
     h += '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="acctab" data-v="' + t[0] + '" aria-pressed="' + (cur === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
     if (cur === 'umumiy') h += accOverview(acc);
-    else if (cur === 'portfel') h += portfelTable(acc);
+    else if (cur === 'portfel') h += portfelTable(acc) + levelCard(acc);
     else if (cur === 'tranz') h += txTable([acc], true);
     else if (cur === 'ulush') h += targetsView(acc, B.isAdmin());
     else if (cur === 'kirit') h += txForm(acc);
@@ -181,7 +181,7 @@
   /* yig'indi katagi: 100% bo'lsa yashil belgi, bo'lmasa farq ko'rsatiladi */
   function sumCell(v, soft) { var ok = Math.abs(v - 100) < 0.005; return '<b class="num">' + pct(v, 2) + '</b>' + (ok ? ' <span class="st good" title="Yig‘indi 100%">✓</span>' : (soft ? '' : ' <span class="muted mini" title="Yig‘indi 100% dan farq">(' + (v - 100 >= 0 ? '+' : '') + (v - 100).toFixed(2) + ')</span>')); }
   B.acts.grp = function (el) { ST.pfGroup = el.getAttribute('data-v'); };
-  function pagePortfel() { var acc = B.curAcc(); if (!acc) return ''; return accSwitch() + '<div class="stack">' + portfelTable(acc) + levelCard(acc) + '</div>'; }
+  function pagePortfel() { var acc = B.curAcc(); if (!acc) return ''; return accSwitch() + '<div class="stack">' + portfelTable(acc) + (B.isStaff() ? '' : targetsView(acc, false)) + levelCard(acc) + '</div>'; }
 
   /* ----- guruh va tur darajasidagi statuslar ----- */
   function levelCard(acc) {
@@ -208,7 +208,7 @@
     });
     var sS = 0, sN = 0, sH = 0, sD = 0;
     assets.forEach(function (x) { var r = an.assets[x.id], own = acc.targets && acc.targets[x.id] != null ? acc.targets[x.id] : '', cur = ST.f['tg_' + x.id] != null ? ST.f['tg_' + x.id] : own, nv = cur !== '' && isFinite(+cur) ? +cur : (x.target || 0); sS += x.target || 0; sN += nv; sH += r ? r.share : 0; sD += r ? r.d : 0; });
-    h += '</tbody><tfoot><tr><td>Jami</td><td class="n">' + sumCell(sS) + '</td><td class="n">' + sumCell(sN) + '</td><td class="n">' + sumCell(sH) + '</td><td class="n">' + sumCell(sD) + '</td><td></td></tr></tfoot></table></div></section>' + levelCard(acc) + '</div>';
+    h += '</tbody><tfoot><tr><td>Jami</td><td class="n">' + sumCell(sS) + '</td><td class="n">' + sumCell(sN) + '</td><td class="n">' + sumCell(sH) + '</td><td class="n">' + sumCell(sD) + '</td><td></td></tr></tfoot></table></div></section></div>';
     return h;
   }
   B.acts.savetargets = function (el) {
@@ -218,17 +218,20 @@
     Object.keys(t).forEach(function (k) { delete ST.f['tg_' + k]; });
     return B.run(B.api('POST', '/api/accounts/' + id, { targets: merged }), 'Ulushlar saqlandi');
   };
+  /* Xizmat haqi: har chorak oxirida hisobdan AVTOMATIK undiriladi — qo'lda kiritiladigan narsa yo'q */
+  B.feeInfo = function (acc) {
+    var list = (D().tx || []).filter(function (t) { return t.acc === acc.id && t.type === 'FEE' && t.status === 'Bajarildi'; }).sort(function (a, b) { return b.t - a.t; });
+    return { list: list, last: list[0] || null, total: list.reduce(function (s, t) { return s + t.amount; }, 0) };
+  };
   function accSettings(acc) {
-    var s = summary(acc);
-    return '<section class="card stack"><h2>Hisob sozlamalari</h2><p class="sub">Xizmat haqi: har chorak foydasining 10%. Foyda = chorak oxiridagi balans − (chorak ichida kiritilgan pul + oldingi chorak oxiridagi balans).</p>' +
-      '<div class="stats"><div class="stat"><small>' + s.q.label + ' kiritilgan</small><b>' + money(s.q.inv) + '</b></div><div class="stat"><small>Oldingi chorak oxiri</small><b>' + money(s.q.prev) + '</b></div><div class="stat"><small>Joriy balans</small><b>' + money(s.T) + '</b></div><div class="stat"><small>Chorak foydasi</small><b>' + money(s.q.profit) + '</b></div><div class="stat"><small>Xizmat haqi (10%)</small><b>' + money(s.q.fee) + '</b></div></div>' +
-      '<div class="form-grid">' + fld('Oldingi chorak oxiridagi balans (so‘m)', '<input type="number" min="0" data-bind="prevQ_' + acc.id + '" value="' + esc(ST.f['prevQ_' + acc.id] != null ? ST.f['prevQ_' + acc.id] : (acc.prevQ || 0)) + '">') + '</div>' +
-      '<div class="row"><button class="btn" data-act="saveprevq" data-v="' + acc.id + '">Saqlash</button></div></section>';
+    var s = summary(acc), f = B.feeInfo(acc);
+    return '<section class="card stack"><h2>Xizmat haqi</h2><p class="sub">Xizmat haqi har chorak oxirida hisobdan avtomatik undiriladi. Qo‘lda hech narsa kiritish shart emas. Foyda = chorak oxiridagi balans − (chorak ichida kiritilgan pul + oldingi chorak oxiridagi balans).</p>' +
+      '<div class="stats"><div class="stat"><small>' + s.q.label + ' kiritilgan</small><b>' + money(s.q.inv) + '</b></div><div class="stat"><small>Oldingi chorak oxiri (avto)</small><b>' + money(s.q.prev) + '</b></div><div class="stat"><small>Joriy balans</small><b>' + money(s.T) + '</b></div><div class="stat"><small>Chorak foydasi</small><b class="' + (s.q.profit >= 0 ? 'good' : 'bad') + '">' + money(s.q.profit) + '</b></div><div class="stat"><small>Jami undirilgan haq</small><b>' + money(f.total) + '</b></div></div>' +
+      (f.list.length ? '<div class="tw"><table><thead><tr><th>Sana</th><th>Izoh</th><th class="n">Summa</th></tr></thead><tbody>' + f.list.slice(0, 8).map(function (t) { return '<tr><td>' + fdt(t.t) + '</td><td>' + esc(t.note || 'Xizmat haqi') + '</td><td class="n">' + money(t.amount) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="muted">Hali xizmat haqi undirilmagan — birinchi chorak yopilgach shu yerda ko‘rinadi.</p>') + '</section>';
   }
-  B.acts.saveprevq = function (el) { var id = el.getAttribute('data-v'); var v = ST.f['prevQ_' + id]; return B.run(B.api('POST', '/api/accounts/' + id, { prevQ: v }), 'Saqlandi'); };
 
   /* ----- tranzaksiyalar ----- */
-  var TLAB = { BUY: 'Xarid', SELL: 'Sotish', DEPOZIT: 'Kiritish', WITHDRAW: 'Yechish', FOIZ: 'Foiz', DIVIDEND: 'Dividend', KUPON: 'Kupon', TRANSFER: 'O‘tkazma' };
+  var TLAB = { BUY: 'Xarid', SELL: 'Sotish', DEPOZIT: 'Kiritish', WITHDRAW: 'Yechish', FOIZ: 'Foiz', DIVIDEND: 'Dividend', KUPON: 'Kupon', TRANSFER: 'O‘tkazma', FEE: 'Xizmat haqi' };
   B.TLAB = TLAB;
   function txRow(t, am, showOwner, accOf) {
     var x = am[t.aid]; if (!x) return '';
@@ -283,14 +286,14 @@
   /* umumiy bitimlar (admin): bir xil bitim barcha mijozlardagi yozuvlari bilan */
   function blocks() {
     var m = {}, list = [];
-    D().tx.forEach(function (t) { if (t.type === 'DEPOZIT' || t.type === 'WITHDRAW') return; var b = m[t.blk]; if (!b) { b = m[t.blk] = { id: t.blk, aid: t.aid, type: t.type, t: t.t, price: t.price, ex: t.ex, chan: t.chan, by: t.by, status: t.status, feeAsset: t.feeAsset, amount: 0, fee: 0, legs: [] }; list.push(b); } if (t.status === 'Bajarildi') { b.amount += t.amount; b.fee += t.fee || 0; } b.legs.push(t); });
+    D().tx.forEach(function (t) { var b = m[t.blk]; if (!b) { b = m[t.blk] = { id: t.blk, aid: t.aid, type: t.type, t: t.t, price: t.price, ex: t.ex, chan: t.chan, by: t.by, status: t.status, feeAsset: t.feeAsset, amount: 0, fee: 0, legs: [] }; list.push(b); } if (t.status === 'Bajarildi') { b.amount += t.amount; b.fee += t.fee || 0; } b.legs.push(t); });
     return list.sort(function (x, y) { return y.t - x.t; });
   }
   function pageTranzAdmin() {
     var am = Core.assetMap(B.S()), accOf = {}; D().accounts.forEach(function (a) { accOf[a.id] = a; });
     var q = (ST.f.txq || '').toLowerCase(), ty = ST.f.txtype || 'all';
     var list = blocks().filter(function (b) { var x = am[b.aid]; return (ty === 'all' || b.type === ty) && (!q || (b.id + ' ' + (x ? x.sym : '') + ' ' + (b.by || '') + ' ' + (b.ex || '')).toLowerCase().indexOf(q) >= 0); });
-    var h = '<div class="stack"><section class="card"><div class="row sb"><h2>Umumiy bitimlar</h2><div class="row"><input type="text" placeholder="Qidirish…"' + bind('txq', ' data-live="1"') + ' style="width:200px">' + sel('txtype', [['all', 'Barcha turlar']].concat(['BUY', 'SELL', 'FOIZ', 'DIVIDEND', 'KUPON', 'TRANSFER'].map(function (x) { return [x, TLAB[x]]; })), 'all') + '</div></div><p class="sub">Bitta bitim barcha mijozlardagi yozuvlari bilan birga. Qatorni bosib, mijozlar bo‘yicha taqsimotni ko‘ring. Depozit va yechishlar Mijozlar → hisob → Tranzaksiyalarda.</p>';
+    var h = '<div class="stack"><section class="card"><div class="row sb"><h2>Umumiy bitimlar</h2><div class="row"><input type="text" placeholder="Qidirish…"' + bind('txq', ' data-live="1"') + ' style="width:200px">' + sel('txtype', [['all', 'Barcha turlar']].concat(['DEPOZIT', 'WITHDRAW', 'BUY', 'SELL', 'FOIZ', 'DIVIDEND', 'KUPON', 'TRANSFER', 'FEE'].map(function (x) { return [x, TLAB[x]]; })), 'all') + '</div></div><p class="sub">Bitta bitim barcha mijozlardagi yozuvlari bilan birga. Qatorni bosib, mijozlar bo‘yicha taqsimotni ko‘ring. Kirim, chiqim, xizmat haqi va barcha bitimlar shu yerda — turi bo‘yicha saralash mumkin.</p>';
     if (!list.length) return h + empty('Bitimlar yo‘q', 'Avto savdo orderi bajarilganda yoki bitim kiritilganda shu yerda ko‘rinadi.') + '</section></div>';
     h += '<div class="tw"><table style="min-width:900px"><thead><tr><th></th><th>Bitim ID</th><th>Aktiv</th><th>Sana</th><th>Tur</th><th class="n">Price</th><th class="n">Amount</th><th class="n">Fee</th><th>Exchange</th><th>Kanal</th><th>Bajaruvchi</th><th>Holat</th></tr></thead><tbody>';
     list.slice(0, 200).forEach(function (b) {
@@ -314,30 +317,11 @@
   /* ----- bitim kiritish (admin/operator) ----- */
   function txAssets() { return D().assets.filter(function (x) { return !x.archived; }).sort(function (a, b) { return (b.group === 'naqd') - (a.group === 'naqd'); }); }
   function defAid(type) { var l = txAssets(), c = Core.cashAsset(B.S()); if ((type === 'DEPOZIT' || type === 'WITHDRAW') && c) return c.id; var nc = l.filter(function (a) { return a.group !== 'naqd'; })[0]; return (nc || l[0]).id; }
+  /* bitim kiritish endi bitta "Yangi amal" oynasida (Amallar bo'limi); bu yerda tezkor tugmalar */
   function txForm(acc) {
-    var assets = txAssets();
-    if (!assets.length) return '<section class="card">' + empty('Aktivlar yo‘q', 'Avval “Aktivlar” sahifasida aktiv qo‘shing (masalan, naqd so‘m UZS).') + '</section>';
-    var k = 'tx_', type = ST.f[k + 'type'] || 'DEPOZIT', aid = ST.f[k + 'aid'] || defAid(type), x = assets.filter(function (a) { return a.id === aid; })[0] || assets[0];
-    var pr = ST.f[k + 'price'] != null ? ST.f[k + 'price'] : (x.price != null ? x.price : '');
-    var hint = type === 'DEPOZIT' ? 'Mijoz hisobiga pul kiritish: aktiv sifatida naqd so‘m (UZS) ni tanlang, miqdorni so‘mda yozing, narx 1.' : type === 'BUY' ? 'Aktiv sotib olish. Pul savdo juftligi aktividan ayriladi (masalan BTC/USDT bo‘lsa USDT dan). Komissiya bo‘sh qolsa avtomatik hisoblanadi.' : type === 'SELL' ? 'Aktiv sotish. Tushum savdo juftligi aktiviga qo‘shiladi (masalan USDT).' : type === 'WITHDRAW' ? 'Hisobdan pul chiqarish.' : 'Foiz, dividend yoki kupon: miqdorni kiriting.';
-    return '<section class="card stack"><h2>Bitim kiritish: ' + esc(acc.owner) + ' · ' + esc(acc.name) + '</h2><p class="sub">' + hint + '</p><form data-form="txadd" class="stack"><div class="form-grid">' +
-      fld('Aktiv', sel(k + 'aid', assets.map(function (a) { return [a.id, a.sym + ' — ' + a.name]; }), aid)) + fld('Tur', sel(k + 'type', Core.TYPES.filter(function (t) { return t !== 'TRANSFER'; }).map(function (t) { return [t, TLAB[t]]; }), type)) +
-      fld('Sana va vaqt', '<input type="datetime-local"' + bind(k + 't', '') + '>') + fld('Miqdor (' + esc(x.sym) + ')', '<input type="number" step="any" min="0"' + bind(k + 'amount') + '>') +
-      fld('Narx (' + x.curr + ')', '<input type="number" step="any" min="0" data-bind="' + k + 'price" value="' + esc(pr) + '">') + fld('Komissiya (bo‘sh = avto)', '<input type="number" step="any" min="0"' + bind(k + 'fee') + '>') +
-      fld('Komissiya aktivi', '<input type="text" placeholder="USDT, UZS…"' + bind(k + 'feeAsset') + '>') + fld('Izoh', '<input type="text"' + bind(k + 'note') + '>') +
-      ((type === 'BUY' || type === 'SELL' || type === 'KUPON') ? fld('Hisob-kitob aktivi (qaysi naqddan ayriladi / qo‘shiladi)', sel(k + 'settle', [['', 'Avto: ' + ((Core.settleAsset(B.S(), x, null) || {}).sym || 'yo‘q')]].concat(D().assets.filter(function (a) { return a.group === 'naqd' && !a.archived; }).map(function (a) { return [a.id, a.sym]; })), '')) : '') +
-      '</div><label class="switch"><input type="checkbox" data-bind="' + k + 'nocash"' + (ST.f[k + 'nocash'] ? ' checked' : '') + '> Naqd aktivga ta’sir qilmasin (BUY/SELL)</label><div class="row"><button class="btn" type="submit">Qo‘shish</button><span class="muted">Yozuv keyin o‘chirilmaydi, faqat sabab bilan bekor qilinadi.</span></div></form></section>';
+    var K = [['in', 'Pul kirdi'], ['out', 'Pul chiqdi'], ['buy', 'Aktiv sotib olindi'], ['sell', 'Aktiv sotildi'], ['swap', 'Pul almashtirildi'], ['inc', 'Foiz / dividend']];
+    return '<section class="card stack"><h2>Yangi amal: ' + esc(acc.owner) + ' · ' + esc(acc.name) + '</h2><p class="sub">Nima bo‘lganini tanlang — keyingi oynada faqat kerakli maydonlar chiqadi. Tasdiqlamaguncha hech narsa yozilmaydi.</p><div class="form-grid">' + K.map(function (k) { return '<button class="btn ghost" data-act="amalopen" data-a="' + acc.id + '" data-k="' + k[0] + '">' + k[1] + '</button>'; }).join('') + '</div></section>';
   }
-  B.onbind['tx_aid'] = function () { delete ST.f.tx_price; B.rerender(); };
-  B.onbind['tx_type'] = function () { delete ST.f.tx_aid; delete ST.f.tx_price; B.rerender(); };
-  B.forms.txadd = function () {
-    var f = ST.f, acc = B.curAcc(); if (!acc) return;
-    var t = f.tx_t ? new Date(f.tx_t).getTime() : Date.now(), assets = D().assets, aid = f.tx_aid || defAid(f.tx_type || 'DEPOZIT'), x = assets.filter(function (a) { return a.id === aid; })[0];
-    var price = f.tx_price != null && f.tx_price !== '' ? f.tx_price : (x.price != null ? x.price : '');
-    var body = { acc: acc.id, aid: aid, type: f.tx_type || 'DEPOZIT', t: t, amount: f.tx_amount, price: price, fee: f.tx_fee, feeAsset: f.tx_feeAsset, note: f.tx_note, cash: f.tx_nocash ? false : undefined, settle: f.tx_settle || undefined };
-    return B.run(B.api('POST', '/api/tx', body), 'Tranzaksiya qo‘shildi').then(function () { ['amount', 'fee', 'feeAsset', 'note', 't', 'price', 'settle'].forEach(function (k) { delete ST.f['tx_' + k]; }); B.rerender(); });
-  };
-
   Object.assign(B.pages, { bosh: pageBosh, portfel: pagePortfel, tranz: pageTranz });
   B.targetsView = targetsView; B.levelCard = levelCard;
 })(window.B);

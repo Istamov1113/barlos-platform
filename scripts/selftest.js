@@ -360,6 +360,12 @@ const srv = app.listen(0, async () => {
         r = await adm('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 200 && r.j.ids.length === 2, 'umumiy signal tasdiqlandi: ' + JSON.stringify(r.j) + JSON.stringify(grp));
         r = await adm('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 400, 'umumiy signal ikki marta yozilmaydi');
         r = await cl3('POST', '/api/deposits/accept-group', { aid: oid, date: dt }); ok(r.s === 403, 'mijoz umumiy signalni tasdiqlay olmaydi: ' + r.s + JSON.stringify(r.j));
+        /* avto-chiqarish yoqilsa, vaqti kelgan omonat foizi o'zi taqsimlanadi (2.16.0) */
+        r = await adm('GET', '/api/deposits'); const pend2 = r.j.due.filter(x => x.aid === oid && !x.done && x.days <= 0 && x.amt > 0);
+        if (pend2.length) { r = await adm('POST', '/api/settings', { autoRel: true }); ok(r.s === 200, 'avto-chiqarish yoqildi');
+          r = await adm('GET', '/api/deposits'); ok(r.j.due.filter(x => x.aid === oid && !x.done && x.days <= 0 && x.amt > 0).length === 0, 'omonat foizi tasdiqlashsiz taqsimlandi (' + pend2.length + ' ta)');
+          r = await adm('POST', '/api/settings', { autoRel: false }); }
+        else ok(true, 'avto-taqsimlash: kutilayotgan signal qolmagan');
         /* aktiv statistikasi */
         st = await adm('GET', '/api/state'); const SA = { fx: st.j.settings.fx, assets: st.j.assets, accounts: st.j.accounts, tx: st.j.tx }, bt = SA.assets.filter(a => a.sym === 'BTC')[0], as = Cd.assetStats(SA, SA.accounts.filter(a => a.id === accBtc), bt, Date.now());
         ok(as.qty > 0 && near(as.total, as.realized + as.unreal + as.income, 1), 'aktiv daromadi: realizatsiya + baholash + foiz = jami: ' + as.total + ' vs ' + (as.realized + as.unreal + as.income));
@@ -435,6 +441,44 @@ const srv = app.listen(0, async () => {
       r = await adm('GET', '/api/acx/report?year=1999'); ok(r.s === 400, 'yil noto‘g‘ri');
       const pf = await fetch(base + '/api/acx/pdf?year=' + Y + '&upto=' + T0 + '&kind=toliq', { headers: { cookie: adm.ck() } }); const pb = Buffer.from(await pf.arrayBuffer()); ok(pf.status === 200 && pb.slice(0, 4).toString() === '%PDF', 'buxg. PDF tayyor');
       r = await adm('GET', '/api/acx/data'); ok(r.s === 200 && r.j.emps.length === 2 && r.j.pays.length === 1 && r.j.manual.length === 1, 'ma’lumotlar o‘chirilmagan');
+      /* ---- Chorak yopish: xizmat haqi avtomatik undiriladi (2.13.0) ---- */
+      { const Cc = require('../public/core.js'), Q = require('../src/quarters'), RP = require('../src/reports'), stt = (await adm('GET', '/api/state')).j, uz = stt.assets.filter(a => a.sym === 'UZS')[0].id, aq = (await cl4('GET', '/api/state')).j.accounts[0].id;
+        const pk = Q.prevKey(Q.qOfDate(T0)), pper = RP.periodOf('chorak', pk), cur = Q.qOfDate(T0);
+        r = await cl('GET', '/api/acx/quarters'); ok(r.s === 403, 'mijoz chorak yopa olmaydi');
+        r = await adm('POST', '/api/tx', { acc: aq, aid: uz, type: 'DEPOZIT', amount: 100000000, price: 1, t: RP.endMs(pper.from) - 12 * 3600e3 }); ok(r.s === 200, 'o‘tgan chorakka depozit: ' + JSON.stringify(r.j));
+        r = await adm('GET', '/api/acx/quarters'); ok(r.s === 200 && r.j.next === pk && r.j.quarters.length >= 1, 'yopiladigan chorak topildi: ' + JSON.stringify(r.j));
+        r = await adm('GET', '/api/acx/quarter/' + pk); const row = r.j.rows.filter(x => x.accId === aq)[0]; ok(r.s === 200 && row && row.mgmt > 0 && row.due > 0 && !r.j.closed, 'oldindan ko‘rish: haq hisoblandi ' + JSON.stringify(row));
+        ok(row.mgmt > 0 && row.mgmt < row.nav * 0.015, 'boshqaruv haqi yillik 1.5% dan CHORAKKA mos (' + row.mgmt + ' / ' + row.nav + ')');
+        r = await adm('POST', '/api/acx/quarter/' + cur + '/close', {}); ok(r.s === 400, 'tugamagan chorakni yopib bo‘lmaydi');
+        r = await cl('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 403, 'mijoz chorak yopa olmaydi (POST)');
+        const stb = (await adm('GET', '/api/state')).j, bal0 = Cc.view({ fx: stb.fx, assets: stb.assets, accounts: stb.accounts, tx: stb.tx, now: Date.now() }, stb.accounts.filter(a => a.id === aq)[0]).T;
+        r = await adm('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 200 && r.j.close.charged > 0, 'chorak yopildi: ' + JSON.stringify(r.j.close && r.j.close.totals));
+        const cr = r.j.close, rowC = cr.rows.filter(x => x.accId === aq)[0];
+        r = await adm('POST', '/api/acx/quarter/' + pk + '/close', {}); ok(r.s === 400, 'chorak ikki marta yopilmaydi');
+        const st2 = (await adm('GET', '/api/state')).j, fee = st2.tx.filter(t => t.type === 'FEE' && t.acc === aq);
+        ok(fee.length === 1 && Math.abs(fee[0].amount - rowC.charged) < 0.01 && fee[0].t === RP.endMs(pper.to), 'mijoz hisobida “Xizmat haqi” yozuvi chorak oxiri sanasi bilan');
+        const bal1 = Cc.view({ fx: st2.fx, assets: st2.assets, accounts: st2.accounts, tx: st2.tx, now: Date.now() }, st2.accounts.filter(a => a.id === aq)[0]).T;
+        ok(Math.abs((bal0 - bal1) - rowC.charged) < 0.01, 'hisob qoldig‘i haq miqdoriga kamaydi');
+        const pq = st2.accounts.filter(a => a.id === aq)[0].prevQ; ok(typeof pq === 'number' && pq > 0 && pq <= 100000000, 'oldingi chorak balansi avtomatik: ' + pq);
+        r = await adm('GET', '/api/acx/quarters'); ok(r.j.quarters.filter(x => x.key === pk)[0].closed === true && r.j.next !== pk, 'chorak yopilgan deb belgilandi');
+        r = await adm('GET', '/api/acx/report?year=' + Y + '&upto=' + T0); const R2 = r.j; ok(R2.checks.every(c => c.ok), 'yopishdan keyin ham nazoratlar o‘tadi: ' + JSON.stringify(R2.checks.filter(c => !c.ok)));
+        const mk2 = pper.to.slice(0, 7); ok(R2.revenueByMonth[mk2] && Math.abs(R2.revenueByMonth[mk2].mgmt - cr.rev.mgmt) < 0.01 && cr.rev.mgmt > 0, 'daromad faqat haqiqatda undirilgan haqdan');
+        ok(R2.mgr.every(x => /^\d{4}-Q[1-4]$/.test(x.k)), 'Rahbar ulushi CHORAKLIK: ' + R2.mgr.map(x => x.k).join(','));
+        const j2 = R2.journal.filter(e => e.doc === 'Tushum-' + mk2)[0]; ok(j2 && j2.d === pper.to, 'haq chorak oxiri kuni daromadga kirdi');
+      }
+      /* ---- Yangi amal: bitta oyna, bir yoki ko'p hisobga (2.14.0) ---- */
+      { const stA = (await adm('GET', '/api/state')).j, uz = stA.assets.filter(a => a.sym === 'UZS')[0].id, a3 = (await cl3('GET', '/api/state')).j.accounts[0].id, a4 = (await cl4('GET', '/api/state')).j.accounts[0].id, n0 = stA.tx.length;
+        r = await cl4('POST', '/api/amal/preview', { kind: 'in', accs: [a3], total: 1000 }); ok(r.s === 403, 'mijoz amal kirita olmaydi');
+        r = await adm('POST', '/api/amal/preview', { kind: 'in', accs: [a3, a4], total: 1000000, aid: uz }); ok(r.s === 200 && r.j.rows.length === 2 && r.j.ok && Math.abs(r.j.total - 1000000) < 0.01, 'ko‘p hisobga kirim ko‘rib chiqildi: ' + JSON.stringify(r.j));
+        ok((await adm('GET', '/api/state')).j.tx.length === n0, 'ko‘rib chiqish hech narsa yozmaydi');
+        r = await adm('POST', '/api/amal', { kind: 'in', accs: [a3, a4], total: 1000000, aid: uz, note: 'sinov' }); ok(r.s === 200 && r.j.rows.length === 2, 'amal bajarildi (2 hisob, bitta bitim)');
+        const stB = (await adm('GET', '/api/state')).j; ok(stB.tx.length === n0 + 2 && new Set(stB.tx.slice(n0).map(t => t.blk)).size === 1 && stB.tx.slice(n0).every(t => t.type === 'DEPOZIT' && t.chan === 'Amal'), 'ikkita DEPOZIT, bitta bitim raqami');
+        r = await adm('POST', '/api/amal/preview', { kind: 'out', accs: [a4], total: 999999999999, aid: uz }); ok(r.s === 200 && !r.j.ok && r.j.rows[0].error, 'yetmaydigan chiqim ko‘rib chiqishda xato ko‘rsatadi: ' + JSON.stringify(r.j.rows[0]));
+        r = await adm('POST', '/api/amal', { kind: 'out', accs: [a4], total: 999999999999, aid: uz }); ok(r.s === 400, 'yetmaydigan chiqim bajarilmaydi');
+        ok((await adm('GET', '/api/state')).j.tx.length === n0 + 2, 'xato amal hech narsa yozmadi');
+        r = await adm('POST', '/api/amal', { kind: 'out', accs: [a3, a4], rows: [{ acc: a3, amount: 1000 }, { acc: a4, amount: 2000 }], aid: uz }); ok(r.s === 200 && r.j.rows.length === 2 && r.j.rows.every(o => o.type === 'WITHDRAW'), 'qo‘lda miqdorlar bilan chiqim');
+        r = await adm('POST', '/api/amal', { kind: 'zzz', accs: [a3], total: 1 }); ok(r.s === 400, 'noma’lum amal turi rad etiladi');
+      }
     }
   } catch (e) { fail++; console.log('ISTISNO', e); }
   console.log('Natija: ' + pass + ' o‘tdi, ' + fail + ' xato'); srv.close(); process.exit(fail ? 1 : 0);

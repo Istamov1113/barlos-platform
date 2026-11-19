@@ -33,8 +33,8 @@
   function tone(v) { return v > 0 ? 'good' : v < 0 ? 'bad' : ''; }
   function signed(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v)); }
 
-  var SIDE = { BUY: ['Sotib olish', 'in'], SELL: ['Sotish', 'out'], DEPOZIT: ['Kirim', 'in'], WITHDRAW: ['Chiqim', 'out'], TRANSFER: ['O‘tkazma', 'out'], DIVIDEND: ['Dividend', 'in'], FOIZ: ['Foiz', 'in'], KUPON: ['Kupon', 'in'] };
-  var TF = { all: ['Hammasi', null], trade: ['Savdo', ['BUY', 'SELL']], inc: ['Daromad', ['FOIZ', 'DIVIDEND', 'KUPON']], flow: ['Kirim/chiqim', ['DEPOZIT', 'WITHDRAW', 'TRANSFER']] };
+  var SIDE = { BUY: ['Sotib olish', 'in'], SELL: ['Sotish', 'out'], DEPOZIT: ['Kirim', 'in'], WITHDRAW: ['Chiqim', 'out'], TRANSFER: ['O‘tkazma', 'out'], DIVIDEND: ['Dividend', 'in'], FOIZ: ['Foiz', 'in'], KUPON: ['Kupon', 'in'], FEE: ['Xizmat haqi', 'out'] };
+  var TF = { all: ['Hammasi', null], trade: ['Savdo', ['BUY', 'SELL']], inc: ['Daromad', ['FOIZ', 'DIVIDEND', 'KUPON']], flow: ['Kirim/chiqim', ['DEPOZIT', 'WITHDRAW', 'TRANSFER', 'FEE']] };
   function pairOf(x) { var q = x.curr === 'UZS' ? 'UZS' : (x.group === 'kripto' || x.group === 'metall' ? 'USDT' : 'USD'); return x.group === 'omonat' || x.group === 'naqd' ? x.sym : x.sym + '/' + q; }
   /* Binance buyurtmalar tarixi ko'rinishidagi jadval */
   function txBook(accs, x, f) {
@@ -126,11 +126,13 @@
   B.acts.hbtab = function (el) { ST.hbTab = el.getAttribute('data-v'); };
   B.acts.rtype = function (el) { ST.rType = el.getAttribute('data-v'); };
   function pageHisobotMerged() {
-    var staff = B.isAdmin(), tab = ST.hbTab || 'pdf';
+    var staff = B.isAdmin(), tab = ST.hbTab || 'chorak';
     if (!staff) tab = 'pdf';
-    var tabs = [['pdf', 'PDF hisobot va hujjatlar'], ['xls', 'Jadvallar (Excel)'], ['sh', 'Shartnoma']];
+    var tabs = [['chorak', 'Chorakni yopish'], ['pdf', 'PDF hisobotlar'], ['bux', 'Buxgalteriya'], ['xls', 'Jadvallar (Excel)'], ['sh', 'Shartnoma']];
     var h = '<div class="stack">';
     if (staff) h += '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="hbtab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    if (tab === 'chorak') return h + B.quarterTab() + '</div>';
+    if (tab === 'bux') return h + (B.pages.buxgalteriya ? B.pages.buxgalteriya() : '') + '</div>';
     if (tab === 'xls') return h + B.pageTables() + '</div>';
     if (tab === 'sh') return h + B.contractBlock() + '</div>';
     return h + B.pageHujjat();
@@ -150,9 +152,11 @@
   }
   var DST = { bugun: ['Bugun', 'warn'], yozilmagan: ['Kechikkan', 'bad'], yaqin: ['Yaqinlashmoqda', ''], yozilgan: ['Yozilgan', 'ok'] };
   B.depSignalCount = function () { return ST.dep && ST.dep.due ? groups(ST.dep.due).filter(function (g) { return g.done < g.items.length && g.items.some(function (i) { return !i.done && i.days <= 0 && i.amt > 0; }); }).length : 0; };
-  B.depSignals = function () {
-    if (!ST.dep) { B.depLoad(); return '<section class="card">' + '<p class="muted">Yuklanmoqda…</p></section>'; }
-    var due = ST.dep.due || [], gs = groups(due), h = '<section class="card stack"><div class="row sb"><h2>Omonat foizi signallari</h2><span class="muted mini">Har oy, boshlanish kunining ertasi</span></div><p class="sub" style="margin:0">Signal bitta omonat va sana uchun umumiy summa va har bir mijozga taqsimlangan ulushni ko‘rsatadi. Tasdiqlansa, har bir mijoz hisobiga “Foiz” tranzaksiyasi yoziladi va omonat qoldig‘iga qo‘shiladi.</p>';
+  B.depSignals = function (onlyPending) {
+    if (!ST.dep) { B.depLoad(); return onlyPending ? '' : '<section class="card">' + '<p class="muted">Yuklanmoqda…</p></section>'; }
+    var due = ST.dep.due || [], gs = groups(due);
+    if (onlyPending) { gs = gs.filter(function (g) { return g.done < g.items.length && g.items.some(function (i) { return !i.done && i.days <= 0 && i.amt > 0; }); }); if (!gs.length) return ''; }
+    var h = '<section class="card stack"><div class="row sb"><h2>' + (onlyPending ? 'Omonat foizi — tasdiqlash kutilmoqda' : 'Omonat foizi signallari') + '</h2><span class="muted mini">' + (onlyPending ? 'Tasdiqlasangiz mijozlarga taqsimlanadi (avtomatik rejim yoniq bo‘lsa o‘zi)' : 'Har oy, boshlanish kunining ertasi') + '</span></div><p class="sub" style="margin:0">Signal bitta omonat va sana uchun umumiy summa va har bir mijozga taqsimlangan ulushni ko‘rsatadi. Tasdiqlansa, har bir mijoz hisobiga “Foiz” tranzaksiyasi yoziladi va omonat qoldig‘iga qo‘shiladi.</p>';
     if (ST.dep.error) h += '<div class="err">' + esc(ST.dep.error) + '</div>';
     if (!gs.length) return h + empty('Signal yo‘q', 'Omonat aktivida foiz, boshlanish sanasi va “har oy” to‘lov belgilanganda signallar shu yerda chiqadi.') + '</section>';
     gs.forEach(function (g) {
