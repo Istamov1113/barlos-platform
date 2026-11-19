@@ -126,11 +126,13 @@
   B.acts.hbtab = function (el) { ST.hbTab = el.getAttribute('data-v'); };
   B.acts.rtype = function (el) { ST.rType = el.getAttribute('data-v'); };
   function pageHisobotMerged() {
-    var staff = B.isAdmin(), tab = ST.hbTab || 'pdf';
+    var staff = B.isAdmin(), tab = ST.hbTab || 'chorak';
     if (!staff) tab = 'pdf';
-    var tabs = [['pdf', 'PDF hisobot va hujjatlar'], ['xls', 'Jadvallar (Excel)'], ['sh', 'Shartnoma']];
+    var tabs = [['chorak', 'Chorakni yopish'], ['pdf', 'PDF hisobotlar'], ['bux', 'Buxgalteriya'], ['xls', 'Jadvallar (Excel)'], ['sh', 'Shartnoma']];
     var h = '<div class="stack">';
     if (staff) h += '<div class="seg tabs" role="tablist">' + tabs.map(function (t) { return '<button data-act="hbtab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
+    if (tab === 'chorak') return h + B.quarterTab() + '</div>';
+    if (tab === 'bux') return h + (B.pages.buxgalteriya ? B.pages.buxgalteriya() : '') + '</div>';
     if (tab === 'xls') return h + B.pageTables() + '</div>';
     if (tab === 'sh') return h + B.contractBlock() + '</div>';
     return h + B.pageHujjat();

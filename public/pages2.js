@@ -346,17 +346,18 @@
   B.acts.xfpreview = function () { var p = xfParams(); return B.api('POST', '/api/transfers/preview', p).then(function (r) { ST.xfPlan = { params: p, data: r }; B.rerender(); }).catch(function (e) { ST.xfPlan = null; B.toast(e.message); B.rerender(); }); };
   B.acts.xfrun = function () {
     if (!ST.xfPlan) return false; if (!confirm('O‘tkazma bajarilsinmi? ' + ST.xfPlan.data.rows.length + ' ta hisobga ta’sir qiladi.')) return false;
-    var p = ST.xfPlan.params; return B.run(B.api('POST', '/api/transfers', p), 'O‘tkazma bajarildi').then(function () { ST.xfPlan = null; delete ST.f.xf_total; B.rerender(); });
+    var p = ST.xfPlan.params; return B.run(B.api('POST', '/api/transfers', p), 'O‘tkazma bajarildi').then(function () { ST.xfPlan = null; delete ST.f.xf_total; if (B.amalDone) B.amalDone(); B.rerender(); });
   };
-  function xferCard() {
+  function xferCard(inWizard) {
     var as = xfAssets(), p = xfParams();
     if (as.length < 2) return '<section class="card"><h2>Ichki o‘tkazma</h2>' + empty('Aktivlar yetarli emas', 'Avval Aktivlar sahifasida naqd so‘m (UZS) va USDT aktivlarini qo‘shing.') + '</section>';
     var from = as.filter(function (a) { return a.id === p.from; })[0], to = as.filter(function (a) { return a.id === p.to; })[0], opts = as.map(function (a) { return [a.id, a.sym + ' — ' + a.name]; });
-    var h = '<section class="card stack"><h2>Ichki o‘tkazma</h2><p class="sub">Masalan: <b>NAQD so‘m → Bitget USDT</b>. Tanlangan hisoblardan summa ulushlariga (ularda mavjud qoldiqqa) qarab proporsional ayriladi. Keyin shu USDT dan BTC va boshqa aktivlar sotib olinadi.</p><div class="form-grid">' +
+    var h = (inWizard ? '<div class="stack">' : '<section class="card stack"><h2>Ichki o‘tkazma</h2>') + '<p class="sub">Masalan: <b>NAQD so‘m → Bitget USDT</b>. Tanlangan hisoblardan summa ulardagi qoldiqqa qarab ulushga bo‘linadi.</p><div class="form-grid">' +
       fld('Qaysi aktivdan', sel('xf_from', opts, p.from)) + fld('Qaysi aktivga', sel('xf_to', opts, p.to)) + fld('Summa qaysi aktivda berilgan', sel('xf_unit', [['from', from ? from.sym + ' (chiqariladigan)' : 'chiqariladigan'], ['to', to ? to.sym + ' (olinadigan)' : 'olinadigan']], p.unit)) +
-      fld('Summa', '<input type="number" step="any" min="0"' + bind('xf_total') + '>') + fld('Dollar kursi (so‘m), bo‘sh = joriy ' + (B.fx() || ''), '<input type="number" step="any" min="0" placeholder="' + (B.fx() || '') + '"' + bind('xf_rate') + '>') + fld('Izoh', '<input type="text"' + bind('xf_note') + '>') +
+      fld('Summa', '<input type="number" step="any" min="0"' + bind('xf_total') + '>') + fld('Dollar kursi (so‘m), bo‘sh = joriy ' + (B.fx() || ''), '<input type="number" step="any" min="0" placeholder="' + (B.fx() || '') + '"' + bind('xf_rate') + '>') + '</div>' +
+      '<details><summary class="muted">Qo‘shimcha: komissiya va izoh (odatda kerak emas)</summary><div class="form-grid" style="margin-top:8px">' + fld('Izoh', '<input type="text"' + bind('xf_note') + '>') +
       fld('Komissiya, % (o‘tkazma summasidan)', '<input type="number" step="any" min="0" max="99" placeholder="0"' + bind('xf_feePct') + '>') + fld('Qat’iy komissiya (jami, ' + (from ? esc(from.sym) : '') + ' da; ulushga qarab bo‘linadi)', '<input type="number" step="any" min="0" placeholder="0"' + bind('xf_feeFix') + '>') +
-      fld('Komissiya qanday olinadi', sel('xf_feeMode', [['incl', 'Summa ichidan ushlanadi (olinadigan miqdor kamayadi)'], ['extra', 'Hisobdan qo‘shimcha yechiladi']], p.feeMode)) + '</div>';
+      fld('Komissiya qanday olinadi', sel('xf_feeMode', [['incl', 'Summa ichidan ushlanadi (olinadigan miqdor kamayadi)'], ['extra', 'Hisobdan qo‘shimcha yechiladi']], p.feeMode)) + '</div></details>';
     h += '<div class="stack" style="gap:6px"><div class="row sb"><b>Hisoblar</b><span><button class="btn ghost small" data-act="xfall" data-v="1">Hammasini belgilash</button> <button class="btn ghost small" data-act="xfall" data-v="0">Tozalash</button></span></div><div class="tw"><table style="min-width:420px"><tbody>';
     D().accounts.filter(function (a) { return !a.archived; }).forEach(function (a) {
       var it = from ? B.view(a).items.filter(function (i) { return i.x.id === from.id; })[0] : null, bal = it ? it.qty : 0, on = ST.xfSel ? ST.xfSel[a.id] !== undefined ? ST.xfSel[a.id] : true : true;
@@ -369,8 +370,9 @@
       var sf = 0, st = 0, sfee = 0; d.rows.forEach(function (r) { sf += r.from; st += r.to; sfee += r.fee || 0; h += '<tr><td>' + esc(r.owner) + '</td><td class="n">' + nf(r.bal, 2) + '</td><td class="n">' + pct(r.share * 100, 2) + '</td><td class="n">' + nf(r.from, 2) + '</td><td class="n">' + nf(r.fee || 0, 2) + '</td><td class="n">' + nf(r.to, 4) + '</td></tr>'; });
       h += '<tr><td><b>Jami</b></td><td class="n">' + nf(d.available, 2) + '</td><td></td><td class="n"><b>' + nf(sf, 2) + '</b></td><td class="n"><b>' + nf(sfee, 2) + '</b></td><td class="n"><b>' + nf(st, 4) + '</b></td></tr></tbody></table></div><div class="row"><button class="btn" data-act="xfrun">Tasdiqlash va bajarish</button></div></div>';
     }
-    return h + '</section>';
+    return h + (inWizard ? '</div>' : '</section>');
   }
+  B.xferCard = xferCard;
 
   function pageFunds() {
     var d = D(), staff = B.isStaff(), pay = d.settings.pay || [];
@@ -388,7 +390,7 @@
     var venues = {}; ['Bitget', 'IBKR', 'Jet.uz', 'Bank'].forEach(function (v) { venues[v] = { sum: 0, items: {} }; });
     d.accounts.forEach(function (a) { B.view(a).items.forEach(function (i) { if (!(i.val > 0)) return; var v = Core.venueOf(i.x), o = venues[v] || (venues[v] = { sum: 0, items: {} }); o.sum += i.val; o.items[i.x.sym] = (o.items[i.x.sym] || 0) + i.val; }); });
     var tot = Object.keys(venues).reduce(function (s, v) { return s + venues[v].sum; }, 0);
-    var h = '<div class="stack">' + (B.isAdmin() ? xferCard() : '') + '<section class="card"><h2>Mijozlar mablag‘i joylashuvi</h2><div class="tw" style="margin-top:8px"><table style="min-width:420px"><thead><tr><th>Joy</th><th class="n">Summa</th><th class="n">Ulushi</th></tr></thead><tbody>';
+    var h = '<div class="stack">' + '<section class="card"><h2>Mijozlar mablag‘i joylashuvi</h2><div class="tw" style="margin-top:8px"><table style="min-width:420px"><thead><tr><th>Joy</th><th class="n">Summa</th><th class="n">Ulushi</th></tr></thead><tbody>';
     Object.keys(venues).forEach(function (v) { var o = venues[v]; h += '<tr class="rowlink" data-act="tog" data-v="fv' + v + '"><td><b>' + v + '</b></td><td class="n">' + money(o.sum) + '</td><td class="n">' + (tot > 0 ? pct(o.sum / tot * 100) : '—') + '</td></tr>'; if (ST.open['fv' + v]) Object.keys(o.items).forEach(function (s2) { h += '<tr class="det"><td>&nbsp;&nbsp;' + esc(s2) + '</td><td class="n">' + money(o.items[s2]) + '</td><td></td></tr>'; }); });
     h += '<tr><td><b>Jami</b></td><td class="n"><b>' + money(tot) + '</b></td><td></td></tr></tbody></table></div></section>';
     var pd = d.dep.filter(function (x) { return x.status === 'To‘lov kutilmoqda' || x.status === 'Tasdiqlash kutilmoqda'; }).length;

@@ -427,6 +427,52 @@ app.post('/api/transfers', A, wrap((req, res) => {
   req.ad = msg; res.json({ ok: true, msg });
 }));
 
+/* ---------------- Yangi amal (2.14.0): kirim, chiqim, xarid, sotish, foiz/dividend — bitta joydan, bir yoki ko'p hisobga ---------------- */
+const AMAL = { in: 'DEPOZIT', out: 'WITHDRAW', buy: 'BUY', sell: 'SELL', inc: 'FOIZ' };
+function amalPlan(S, b) {
+  const kind = String(b.kind || ''); if (!AMAL[kind]) throw bad('Amal turini tanlang.');
+  const type = kind === 'inc' ? (['FOIZ', 'DIVIDEND', 'KUPON'].indexOf(b.itype) >= 0 ? b.itype : 'FOIZ') : AMAL[kind];
+  const am = Core.assetMap(S), cash = Core.cashAsset(S);
+  const aid = b.aid || ((kind === 'in' || kind === 'out') && cash ? cash.id : ''), x = am[aid]; if (!x) throw bad('Aktivni tanlang.');
+  const t = +b.t || now(), ids = Array.isArray(b.accs) ? b.accs : [], accs = S.accounts.filter(a => !a.archived && ids.indexOf(a.id) >= 0);
+  if (!accs.length) throw bad('Hisobni tanlang.');
+  const dec = x.group === 'naqd' && x.curr === 'UZS' ? 2 : 8, rd = (v, d) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
+  let rows;
+  if (Array.isArray(b.rows) && b.rows.length) {           /* qo'lda: har hisobga alohida miqdor */
+    rows = b.rows.map(r => ({ acc: accs.filter(a => a.id === r.acc)[0], amount: +r.amount })).filter(r => r.acc && r.amount > 0);
+  } else {                                                /* umumiy miqdor — hisoblarga ulushiga qarab bo'linadi */
+    const total = +b.total; if (!(total > 0)) throw bad('Miqdor musbat bo‘lsin.');
+    const w = accs.map(a => { const V = Core.view(S, a), it = V.items.filter(i => i.x.id === x.id)[0]; return accs.length === 1 ? 1 : (kind === 'sell' || kind === 'inc' || kind === 'out') ? (it && it.qty > 0 ? it.qty : 0) : Math.max(0, V.T); });
+    const sum = w.reduce((q, v) => q + v, 0); if (!(sum > 0)) throw bad('Taqsimlash uchun tanlangan hisoblarda tegishli qoldiq yo‘q.');
+    rows = accs.map((a, i) => ({ acc: a, amount: rd(total * w[i] / sum, dec) })).filter(r => r.amount > 0);
+    const big = rows.slice().sort((p, q) => q.amount - p.amount)[0], diff = rd(total - rows.reduce((q, r) => q + r.amount, 0), dec); if (big && diff) big.amount = rd(big.amount + diff, dec);
+  }
+  if (!rows.length) throw bad('Kiritiladigan miqdor nolga teng.');
+  const price = b.price !== undefined && b.price !== '' && b.price != null ? +b.price : (x.group === 'naqd' ? 1 : x.price);
+  return { kind, type, x, t, rows, price, input: r => ({ acc: r.acc.id, aid: x.id, type, t, amount: r.amount, price, fee: b.fee, feeAsset: b.feeAsset, settle: b.settle || undefined, cash: b.nocash ? false : undefined, note: b.note }) };
+}
+const PREVIEW_STOP = { preview: true };
+function amalRun(b, who, commit) {
+  const out = []; let blk = null;
+  try {
+    db.tx(() => {
+      const S = loadS(), p = amalPlan(S, b); blk = 'B' + (10000 + db.seq('blk'));
+      p.rows.forEach(r => {
+        try { const rec = writeTx(S, p.input(r), who, 'Amal', blk); out.push({ acc: r.acc.id, owner: r.acc.owner, kind: r.acc.kind, amount: rec.amount, price: rec.price, fee: rec.fee || 0, feeAsset: rec.feeAsset || '', sym: p.x.sym, type: p.type, ok: true, id: rec.id }); }
+        catch (e) { out.push({ acc: r.acc.id, owner: r.acc.owner, kind: r.acc.kind, amount: r.amount, sym: p.x.sym, type: p.type, ok: false, error: e.message }); }
+      });
+      if (!commit) throw PREVIEW_STOP;                    /* ko'rib chiqish: hech narsa saqlanmaydi */
+      const bads = out.filter(o => !o.ok); if (bads.length) throw bad(bads.map(o => o.owner + ': ' + o.error).join(' · '));
+    });
+  } catch (e) { if (e !== PREVIEW_STOP) throw e; }
+  return { blk, rows: out, ok: out.every(o => o.ok), total: out.reduce((q, o) => q + (o.ok ? o.amount : 0), 0) };
+}
+app.post('/api/amal/preview', AO, wrap((req, res) => res.json(amalRun(req.body || {}, 'Operator', false))));
+app.post('/api/amal', AO, wrap((req, res) => {
+  const b = req.body || {}, who = req.user.role === 'admin' ? 'Admin' : 'Operator: ' + (req.user.name || req.user.email), r = amalRun(b, who, true);
+  req.ad = 'Amal ' + b.kind + ' · ' + r.rows.length + ' ta hisob · jami ' + r.total + ' · bitim ' + r.blk; res.json(r);
+}));
+
 /* ---------------- Depozit so'rovlari (mijoz to'laydi, admin tasdiqlaydi) ---------------- */
 const ST_WAIT = 'To‘lov kutilmoqda', ST_CHECK = 'Tasdiqlash kutilmoqda';
 function ownDep(req) {
