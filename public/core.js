@@ -205,7 +205,7 @@
   function accLabel(acc) { return (acc.owner || acc.name || acc.id) + (acc.kind === 'isl' ? ' (Islomiy)' : ''); }
 
   /* Yig'ma bitim: har bir hisob alohida hisoblanadi, qabul qilinganlar yig'ilib bitta buyurtma bo'ladi, keyin ulushga qarab taqsimlanadi */
-  function poolRun(S, x, side, price, forced) {
+  function poolRun(S, x, side, price, forced, ordOv) {
     var g = GROUPS[x.group], cash = settleAsset(S, x, null);
     var rows = S.accounts.filter(function (a) { return !a.archived; }).map(function (acc) {
       var V = view(S, acc), an = analyze(S, V), it = V.items.filter(function (i) { return i.x.id === x.id; })[0];
@@ -218,7 +218,8 @@
     var tot = rows.reduce(function (s, r) { return r.ok ? s + r.qty : s; }, 0), usd = tot * price * fxOf(S, x.curr) / (fxOf(S, 'USD') || 1);
     var out = { rows: rows, tot: tot, usd: usd, state: 'none', ord: 0, ratio: 1, step: g.step, min: g.min, feeTot: 0, feeAsset: side === 'BUY' ? x.sym : (x.group === 'kripto' ? 'USDT' : 'USD') };
     if (tot > 0) {
-      var ord = +(Math.round(tot / g.step) * g.step).toFixed(8);
+      var ord = +(Math.round((ordOv > 0 ? ordOv : tot) / g.step) * g.step).toFixed(8);
+      if (ordOv > 0) { out.usd = usd = ord * price * fxOf(S, x.curr) / (fxOf(S, 'USD') || 1); }
       if (usd < g.min || ord <= 0) out.state = 'wait'; else { out.state = 'fill'; out.ord = ord; out.ratio = ord / tot; }
     }
     rows.forEach(function (r) { r.alloc = out.state === 'fill' && r.ok ? r.qty * out.ratio : 0; if (side === 'SELL' && r.alloc > r.held) r.alloc = r.held; r.fee = 0; });
@@ -263,6 +264,23 @@
       }
     }
     return { ok: true, rec: rec };
+  }
+
+  /* Order bosqichi: Signal (hisoblangan, admin o'zgartira oladi) -> Order (birjaga qo'yilgan, API kuzatadi) -> Yakunlangan (bajarilgan).
+     'Bekor' — bajarilmagan yopilgan holatlar (rad, bekor, muddati o'tgan). Eski yozuvlar holatidan aniqlanadi. */
+  function stageOf(o) { return o.stage || (o.status === 'Kutilmoqda' ? 'Signal' : o.status === 'Bajarilgan' ? 'Yakunlangan' : 'Bekor'); }
+  /* Admin tanlay oladigan birjalar (aktiv guruhiga qarab) */
+  var EXCH_BY = { kripto: ['Bitget', 'Binance'], xalqaro: ['IBKR', 'Bitget'], metall: ['IBKR', 'Bitget'], milliy: ['Jet.uz'], omonat: ['Bank'], obligatsiya: ['Bank'], naqd: ['Bank'] };
+  function exchOpts(x) { var l = (EXCH_BY[x.group] || ['Bank']).slice(), v = venueOf(x); if (l.indexOf(v) < 0) l.unshift(v); return l; }
+  /* Birjada bajarilgan haqiqiy natija (qty, price, fee) bo'yicha mijozlarga taqsimot yozuvlari: rejadagi ulushlar bajarilgan hajmga moslanadi */
+  function fillTx(S, order, fill, by, chan, blk, t) {
+    var x = assetMap(S)[order.aid], p = order.pr, k = fill.qty / (p.ord || fill.qty || 1), out = [];
+    var rows = p.rows.filter(function (r) { return r.ok && r.alloc > 0; }), sa = rows.reduce(function (s, r) { return s + r.alloc; }, 0) || 1;
+    var feeTot = fill.fee != null ? fill.fee : p.feeTot * k;
+    rows.forEach(function (r) {
+      out.push({ acc: r.acc, aid: x.id, type: order.side, t: t, price: fill.price, amount: +(r.alloc * k).toFixed(8), fee: feeTot * r.alloc / sa, feeAsset: fill.feeAsset || p.feeAsset, ex: order.ex || venueOf(x), chan: chan, by: by, blk: blk, orderId: order.id });
+    });
+    return out;
   }
 
   /* Orderni bajarish: har bir hisob uchun tranzaksiya yozuvlari ro'yxati (saqlash serverda) */
@@ -474,6 +492,6 @@
 
   var Core = { GROUPS: GROUPS, GKEYS: GKEYS, STATUS: STATUS, TYPES: TYPES, SET: SET, BENCH_RATE: BENCH_RATE, BENCHC: BENCHC, FEE: FEE, fxOf: fxOf, assetMap: assetMap, cashAsset: cashAsset,
     venueOf: venueOf, settleAsset: settleAsset, isAuto: isAuto, tradable: tradable, feeOf: feeOf, position: position, val: val, targetOf: targetOf, view: view, held: held, band: band, analyze: analyze,
-    netDep: netDep, bench: bench, quarter: quarter, decide: decide, clientCalc: clientCalc, poolRun: poolRun, snap: snap, checkTx: checkTx, orderTx: orderTx, groupSums: groupSums, accLabel: accLabel, accrue: accrue, stochRsi: stochRsi, typeTarget: typeTarget, STOCH_DEF: STOCH_DEF, dayNum: dayNum, dayStr: dayStr, addMonths: addMonths, depState: depState, depDue: depDue, bondSched: bondSched, bondAccrued: bondAccrued, bondYtm: bondYtm, bondSignal: bondSignal, bondDue: bondDue, qtyAt: qtyAt, assetStats: assetStats, assetTx: assetTx };
+    netDep: netDep, bench: bench, quarter: quarter, decide: decide, clientCalc: clientCalc, poolRun: poolRun, snap: snap, checkTx: checkTx, orderTx: orderTx, fillTx: fillTx, stageOf: stageOf, exchOpts: exchOpts, groupSums: groupSums, accLabel: accLabel, accrue: accrue, stochRsi: stochRsi, typeTarget: typeTarget, STOCH_DEF: STOCH_DEF, dayNum: dayNum, dayStr: dayStr, addMonths: addMonths, depState: depState, depDue: depDue, bondSched: bondSched, bondAccrued: bondAccrued, bondYtm: bondYtm, bondSignal: bondSignal, bondDue: bondDue, qtyAt: qtyAt, assetStats: assetStats, assetTx: assetTx };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core; else root.Core = Core;
 })(typeof self !== 'undefined' ? self : this);
