@@ -167,32 +167,79 @@
     return h;
   }
 
-  /* ================= AVTO SAVDO ================= */
-  var SLAB = { 'Kutilmoqda': 'p-w', 'Bajarilgan': 'p-b', 'Rad etilgan': 'p-s', 'Bekor qilingan': 'p-h', 'Muddati o’tgan': 'p-h' };
+  /* ================= AVTO SAVDO =================
+     Bosqichlar: Signal (hisoblangan, admin o'zgartiradi) -> Order (birjaga joylangan, faqat API kuzatadi) -> Yakunlangan (API tasdiqlagan) */
+  var STAGE_CLS = { Signal: 'p-w', Order: 'p-b', Yakunlangan: 'p-sb', Bekor: 'p-h' };
+  function stagePill(o) { var g = Core.stageOf(o); return '<span class="pill ' + STAGE_CLS[g] + '">' + esc(g === 'Bekor' ? o.status : g) + '</span>'; }
+  function exApi(ex) { return (D().exch || []).filter(function (e) { return e.id === ex; })[0]; }
   B.acts.trtab = function (el) { ST.trTab = el.getAttribute('data-v'); };
   B.acts.autorel = function (el) { return post('/api/settings', { autoRel: !D().settings.autoRel }); };
   B.forms.signal = function () { var f = ST.f; return post('/api/signals', { aid: f.sg_aid, side: f.sg_side || 'BUY', price: f.sg_price }, 'Signal qabul qilindi'); };
+  B.acts.exchtest = function (el) { return B.run(B.api('POST', '/api/exchanges/test', { id: el.getAttribute('data-v') }).then(function (r) { alert(r.msg); return r; }), 'Birja ulanishi tekshirildi'); };
+  B.acts.pollord = function () { return post('/api/orders/poll', {}, 'Birja holati yangilandi'); };
   B.acts.sendord = function (el) {
     var id = el.getAttribute('data-v'), o = D().orders.filter(function (x) { return x.id === id; })[0];
-    var p = prompt('Bozorda haqiqiy bajarilgan narx (' + o.sym + '). O‘zgartirmasangiz order narxi ishlatiladi:', o.price); if (p === null) return false;
-    return post('/api/orders/' + id + '/send', { price: +p }, 'Order bajarildi va mijozlar hisobiga taqsimlandi');
+    if (exApi(o.ex)) {
+      if (!confirm(o.ex + ' birjasiga order yuborilsinmi?\n\n' + o.sym + ' ' + o.side + ' · narx ' + o.price + ' · ' + (o.ot === 'MARKET' ? 'bozor narxida' : 'limit') + '\n\nYuborilgach order o‘zgartirib bo‘lmaydi.')) return false;
+      return post('/api/orders/' + id + '/send', {}, 'Order birjaga yuborildi. Bajarilishi API orqali kuzatiladi.');
+    }
+    var p = prompt(o.ex + ' uchun API yo‘q. Bozorda haqiqiy bajarilgan narxni kiriting (' + o.sym + '):', o.price); if (p === null) return false;
+    return post('/api/orders/' + id + '/send', { price: +p }, 'Bitim qo‘lda tasdiqlandi va mijozlar hisobiga taqsimlandi');
   };
-  B.acts.cancelord = function (el) { if (!confirm('Order bekor qilinsinmi?')) return false; return post('/api/orders/' + el.getAttribute('data-v') + '/cancel', {}, 'Order bekor qilindi'); };
-  function ordDetail(o, x) {
-    var p = o.pr, h = '<tr class="det"><td colspan="9"><div class="stack" style="gap:8px"><div class="mini muted">Umumiy hajm: <b>' + B.qtyStr(x, p.tot) + '</b> · Order hajmi: <b>' + B.qtyStr(x, p.ord) + '</b> (qadam ' + p.step + ', minimal ' + p.min + ' USD) · Komissiya: <b>' + nf(p.feeTot) + ' ' + esc(p.feeAsset) + '</b></div><table style="min-width:640px"><thead><tr><th>Mijoz</th><th>Status</th><th class="n">N</th><th>Natija</th><th class="n">Hisoblangan</th><th class="n">Taqsimot</th><th class="n">Komissiya</th></tr></thead><tbody>';
-    p.rows.forEach(function (r) { h += '<tr><td>' + esc(r.name) + '</td><td>' + pill(r.status) + '</td><td class="n">' + (r.n || '—') + '</td><td>' + (r.ok ? '<span class="pill p-b">Ruxsat</span>' : '<span class="pill p-s" title="' + esc(r.why) + '">Rad</span><div class="muted mini">' + esc(r.why) + '</div>') + '</td><td class="n">' + (r.ok ? B.qtyStr(x, r.qty) : '—') + '</td><td class="n">' + (r.alloc ? B.qtyStr(x, r.alloc) : '—') + '</td><td class="n">' + (r.fee ? nf(r.fee) : '—') + '</td></tr>'; });
-    if (!p.rows.length) h += '<tr><td colspan="7" class="muted">Hisoblar yo‘q.</td></tr>';
-    return h + '</tbody></table></div></td></tr>';
+  B.acts.cancelord = function (el) { if (!confirm('Signal bekor qilinsinmi?')) return false; return post('/api/orders/' + el.getAttribute('data-v') + '/cancel', {}, 'Signal bekor qilindi'); };
+  B.forms.ordedit = function (f) {
+    var id = f.getAttribute('data-v'), k = function (n) { return ST.f['oe_' + id + '_' + n]; }, b = {};
+    if (k('ex') != null) b.ex = k('ex'); if (k('ot') != null) b.ot = k('ot'); if (k('price') != null) b.price = k('price'); if (k('qty') != null) b.qty = k('qty');
+    ['ex', 'ot', 'price', 'qty'].forEach(function (n) { delete ST.f['oe_' + id + '_' + n]; });
+    return post('/api/orders/' + id + '/edit', b, 'Signal o‘zgartirildi, hisob-kitob qayta bajarildi');
+  };
+  function editForm(o, x) {
+    var k = function (n) { return 'oe_' + o.id + '_' + n; };
+    return '<form data-form="ordedit" data-v="' + o.id + '" class="row" style="align-items:end;gap:10px;flex-wrap:wrap"><b>O‘zgartirish (faqat Signal bosqichida):</b>' +
+      '<label class="mini muted">Birja<br>' + sel(k('ex'), Core.exchOpts(x).map(function (e) { return [e, e + (exApi(e) ? (exApi(e).ready ? '' : ' (API ulanmagan)') : ' (API yo‘q — qo‘lda)')]; }), o.ex) + '</label>' +
+      '<label class="mini muted">Order turi<br>' + sel(k('ot'), [['LIMIT', 'Limit'], ['MARKET', 'Bozor narxida']], o.ot || 'LIMIT') + '</label>' +
+      '<label class="mini muted">Narx<br><input type="number" step="any" min="0" ' + bind(k('price')).replace('value=""', 'value="' + o.price + '"') + ' style="width:120px"></label>' +
+      '<label class="mini muted">Hajm (bo‘sh = hisoblangan)<br><input type="number" step="any" min="0" placeholder="' + +(+o.pr.tot).toFixed(8) + '" ' + bind(k('qty')).replace('value=""', 'value="' + (o.ordOv || '') + '"') + ' style="width:150px"></label>' +
+      '<button class="btn small" type="submit">Saqlash va qayta hisoblash</button></form>';
+  }
+  /* mijozlarga taqsimot jadvali: reja (Signal/Order) yoki haqiqiy bajarilgan (Yakunlangan) */
+  function distTable(o, x, done) {
+    var p = o.pr, f = o.fill, k = done && f ? f.qty / (p.ord || f.qty || 1) : 1, feeTot = done && f && f.fee != null ? f.fee : p.feeTot * k, sa = p.rows.reduce(function (s, r) { return s + (r.ok && r.alloc > 0 ? r.alloc : 0); }, 0) || 1;
+    var h = '<table style="min-width:640px"><thead><tr><th>Mijoz</th>' + (done ? '' : '<th>Status</th><th class="n">N</th><th>Natija</th><th class="n">Hisoblangan</th>') + '<th class="n">' + (done ? 'Taqsimlandi' : 'Taqsimot') + '</th>' + (done ? '<th class="n">Narx</th><th class="n">Summa</th>' : '') + '<th class="n">Komissiya</th></tr></thead><tbody>', n = 0;
+    p.rows.forEach(function (r) {
+      if (done && !(r.ok && r.alloc > 0)) return; n++;
+      var am = r.alloc * k, fee = feeTot * r.alloc / sa;
+      h += '<tr><td>' + esc(r.name) + '</td>' + (done ? '' : '<td>' + B.pill(r.status) + '</td><td class="n">' + (r.n || '—') + '</td><td>' + (r.ok ? '<span class="pill p-b">Ruxsat</span>' : '<span class="pill p-s" title="' + esc(r.why) + '">Rad</span><div class="muted mini">' + esc(r.why) + '</div>') + '</td><td class="n">' + (r.ok ? B.qtyStr(x, r.qty) : '—') + '</td>') +
+        '<td class="n">' + (r.alloc ? B.qtyStr(x, am) : '—') + '</td>' + (done ? '<td class="n">' + (f ? nf(f.price) : '—') + '</td><td class="n">' + (f ? nf(am * f.price) : '—') + '</td>' : '') + '<td class="n">' + (fee ? nf(fee) : '—') + '</td></tr>';
+    });
+    if (!n) h += '<tr><td colspan="8" class="muted">Hisoblar yo‘q.</td></tr>';
+    return h + '</tbody></table>';
+  }
+  function ordDetail(o, x, done) {
+    var p = o.pr, g = Core.stageOf(o), h = '<tr class="det"><td colspan="10"><div class="stack" style="gap:8px">';
+    if (done) {
+      var f = o.fill || { qty: p.ord, price: o.price };
+      h += '<div class="mini muted">Birja: <b>' + esc(o.ex || '—') + '</b>' + (o.xid ? ' · birja order raqami: <span class="mono">' + esc(o.xid) + '</span>' : '') + ' · Bajarilgan hajm: <b>' + B.qtyStr(x, f.qty) + '</b>' + (f.partial ? ' <span class="pill p-w">qisman (rejadagi ' + B.qtyStr(x, p.ord) + ')</span>' : '') + ' · Bajarilgan narx: <b>' + nf(f.price) + '</b> · ' + (f.manual ? 'qo‘lda tasdiqlangan (API yo‘q)' : 'API orqali tasdiqlangan') + ' · Bitim: <span class="mono">' + esc(o.blk || '') + '</span></div>' + distTable(o, x, true);
+    } else {
+      h += '<div class="mini muted">Umumiy hajm: <b>' + B.qtyStr(x, p.tot) + '</b> · Order hajmi: <b>' + B.qtyStr(x, p.ord) + '</b> (qadam ' + p.step + ', minimal ' + p.min + ' USD) · Komissiya: <b>' + nf(p.feeTot) + ' ' + esc(p.feeAsset) + '</b> · Birja: <b>' + esc(o.ex || '—') + '</b>' + (g === 'Order' ? ' · birja order raqami: <span class="mono">' + esc(o.xid || '') + '</span> · <span class="lock">O‘zgartirib bo‘lmaydi — faqat API kuzatadi</span>' : '') + '</div>' +
+        (o.xerr ? '<div class="bad mini">Birja xabari: ' + esc(o.xerr) + '</div>' : '') + (g === 'Signal' ? editForm(o, x) : '') + distTable(o, x, false);
+    }
+    return h + '</div></td></tr>';
+  }
+  function exchBar() {
+    var ex = D().exch || []; if (!ex.length) return '';
+    return '<div class="row" style="gap:12px;flex-wrap:wrap"><b>Birjalar (API):</b>' + ex.map(function (e) { return '<span class="pill ' + (e.ready ? 'p-b' : 'p-h') + '" title="' + (e.ready ? 'Kalit kiritilgan' : '.env faylida kerak: ' + esc(e.need)) + '">' + esc(e.id) + ': ' + (e.ready ? 'ulangan' : 'kalit yo‘q') + '</span>' + (e.ready ? ' <button class="btn ghost small" data-act="exchtest" data-v="' + e.id + '">Tekshirish</button>' : ''); }).join(' ') + '</div>';
   }
   function pageSavdo() {
     if (!B.isAdmin()) return '<div class="stack">' + B.depSignals() + '</div>';
     var d = D(), st = d.settings, am = Core.assetMap(B.S()), tab = ST.trTab || 'ord';
     var h = '<div class="stack"><section class="card stack"><div class="row sb"><h2>Signal qabul qilish</h2><label class="switch"><input type="checkbox" ' + (st.autoRel ? 'checked ' : '') + 'data-act="autorel"> Avtomatik bozorga chiqarish</label></div>' +
-      '<p class="sub">Signallar shu yerdagi qo‘lda yuborish va chartdagi alertlar (🔔, masalan BB AlgoAlpha BUY/SELL) orqali keladi. Har bir mijoz uchun miqdor alohida hisoblanadi, ruxsat berilganlar bitta orderga yig‘iladi.</p>';
+      '<p class="sub">Tartib: <b>Signal</b> keladi va hisob-kitob avtomatik tayyorlanadi (admin birja, narx, hajmni o‘zgartira oladi) → <b>Bozorga yuborish</b> bosilgach <b>Order</b> birjaga joylanadi (o‘zgartirib bo‘lmaydi, API kuzatadi) → birja bajarganini tasdiqlagach <b>Yakunlangan</b>: bitim mijozlar hisobiga haqiqiy narx va hajm bo‘yicha taqsimlanadi.</p>' + exchBar();
     var tr = d.assets.filter(function (a) { return !a.archived && Core.tradable(a); });
     if (tr.length) h += '<form data-form="signal" class="row" style="align-items:end"><b>Qo‘lda signal:</b>' + sel('sg_aid', tr.map(function (a) { return [a.id, a.sym]; }), tr[0].id) + sel('sg_side', [['BUY', 'BUY'], ['SELL', 'SELL']], 'BUY') + '<input type="number" step="any" min="0" placeholder="Narx (bo‘sh = joriy)"' + bind('sg_price') + '><button class="btn small" type="submit">Yuborish</button></form>';
     h += '</section>';
-    var act = d.orders.filter(function (o) { return o.status === 'Kutilmoqda'; }), done = d.orders.filter(function (o) { return o.status !== 'Kutilmoqda'; });
+    var act = d.orders.filter(function (o) { var g = Core.stageOf(o); return g === 'Signal' || g === 'Order'; }), done = d.orders.filter(function (o) { return Core.stageOf(o) === 'Yakunlangan'; }), oOf = {};
+    d.orders.forEach(function (o) { oOf[o.id] = o; });
     h += '<div class="seg tabs" role="tablist">' + [['sig', 'Signallar (' + d.signals.length + ')'], ['ord', 'Orderlar (' + (act.length + B.depSignalCount()) + ')'], ['done', 'Yakunlangan (' + done.length + ')'], ['dep', 'Omonat foizi' + (B.depSignalCount() ? ' (' + B.depSignalCount() + ')' : '')]].map(function (t) { return '<button data-act="trtab" data-v="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>';
     if (!ST.dep && !ST.depLoadStarted) { ST.depLoadStarted = true; B.depLoad(); }
     if (tab === 'ord') h += B.depSignals(true);
@@ -200,21 +247,21 @@
     else if (tab === 'sig') {
       h += '<section class="card"><div class="row sb"><h2>Signallar</h2><span class="lock">O‘chirish mumkin emas</span></div>';
       var sg = d.signals.slice().sort(function (a, b) { return b.t - a.t; });
-      if (!sg.length) h += empty('Signallar yo‘q', 'Chartdagi alert ishlaganda yoki qo‘lda signal yuborilganda shu yerda paydo bo‘ladi.');
-      else { h += '<div class="tw"><table><thead><tr><th>ID</th><th>Vaqt</th><th>Aktiv</th><th>Juftlik</th><th>Tomon</th><th class="n">Narx</th><th>Manba</th><th>Order</th></tr></thead><tbody>'; sg.slice(0, 200).forEach(function (s) { h += '<tr><td class="mono">' + s.id + '</td><td class="nowrap">' + fdt(s.t) + '</td><td><b>' + esc(s.sym) + '</b></td><td class="mono">' + esc(s.pair) + '</td><td><span class="pill ' + (s.side === 'BUY' ? 'p-b' : 'p-s') + '">' + s.side + '</span></td><td class="n">' + nf(s.price) + '</td><td>' + esc(s.src) + '</td><td class="mono">' + (s.ord || '—') + '</td></tr>'; }); h += '</tbody></table></div>'; }
+      if (!sg.length) h += empty('Signallar yo‘q', 'Chartdagi alert ishlaganda yoki qo‘lda signal yuborilganda shu yerda paydo bo‘ladi. Har bir signal avtomatik Orderlar bo‘limida hisob-kitob bilan paydo bo‘ladi.');
+      else { h += '<div class="tw"><table><thead><tr><th>ID</th><th>Vaqt</th><th>Aktiv</th><th>Juftlik</th><th>Tomon</th><th class="n">Narx</th><th>Manba</th><th>Order</th><th>Status</th></tr></thead><tbody>'; sg.slice(0, 200).forEach(function (s) { var o = oOf[s.ord]; h += '<tr><td class="mono">' + s.id + '</td><td class="nowrap">' + fdt(s.t) + '</td><td><b>' + esc(s.sym) + '</b></td><td class="mono">' + esc(s.pair) + '</td><td><span class="pill ' + (s.side === 'BUY' ? 'p-b' : 'p-s') + '">' + s.side + '</span></td><td class="n">' + nf(s.price) + '</td><td>' + esc(s.src) + '</td><td class="mono">' + (s.ord || '—') + '</td><td>' + (o ? stagePill(o) : '—') + '</td></tr>'; }); h += '</tbody></table></div>'; }
       h += '</section>';
     } else {
-      var list = tab === 'ord' ? act : done, title = tab === 'ord' ? 'Orderlar' : 'Yakunlangan orderlar';
-      list = list.slice().sort(function (a, b) { return (b.fin || b.t) - (a.fin || a.t); });
-      h += '<section class="card"><h2>' + title + '</h2>';
-      if (!list.length) h += empty(tab === 'ord' ? 'Kutayotgan order yo‘q.' : 'Yakunlangan orderlar yo‘q.');
+      var isO = tab === 'ord', list = (isO ? act : done).slice().sort(function (a, b) { return (b.fin || b.t) - (a.fin || a.t); });
+      h += '<section class="card"><div class="row sb"><h2>' + (isO ? 'Orderlar' : 'Yakunlangan bitimlar') + '</h2>' + (isO && act.some(function (o) { return Core.stageOf(o) === 'Order'; }) ? '<button class="btn ghost small" data-act="pollord">Birja holatini hozir tekshirish</button>' : '') + '</div>';
+      if (!list.length) h += empty(isO ? 'Kutayotgan order yo‘q.' : 'Yakunlangan bitimlar yo‘q.', isO ? '' : 'Birjada bajarilgan va API orqali tasdiqlangan bitimlar shu yerda ko‘rinadi.');
       else {
-        h += '<div class="tw"><table style="min-width:900px"><thead><tr><th></th><th>Order / Signal</th><th>Vaqt</th><th>Aktiv</th><th>Tomon</th><th class="n">Narx</th><th class="n">Hajm</th><th>Holat</th><th class="act"></th></tr></thead><tbody>';
+        h += '<div class="tw"><table style="min-width:820px"><thead><tr><th></th><th>Order / Signal</th><th>Vaqt</th><th>Aktiv</th><th>Tomon</th><th class="n">' + (isO ? 'Narx' : 'Bajarilgan narx') + '</th><th class="n">' + (isO ? 'Hajm' : 'Bajarilgan hajm') + '</th><th>Birja</th><th>Status</th><th class="act"></th></tr></thead><tbody>';
         list.slice(0, 150).forEach(function (o) {
-          var x = am[o.aid]; if (!x) return; var open = !!ST.open['ord' + o.id];
-          h += '<tr class="rowlink" data-act="tog" data-v="ord' + o.id + '"><td>' + B.CHEV.replace('class="chev"', 'class="chev" style="transform:rotate(' + (open ? 180 : 0) + 'deg)"') + '</td><td class="mono">' + o.id + '<div class="muted mini">' + o.sid + '</div></td><td class="nowrap">' + fdt(o.t) + '</td><td><div class="asset-cell">' + B.logo(x, 24) + '<b>' + esc(o.sym) + '</b></div></td><td><span class="pill ' + (o.side === 'BUY' ? 'p-b' : 'p-s') + '">' + o.side + '</span></td><td class="n">' + nf(o.price) + '</td><td class="n">' + B.qtyStr(x, o.pr.ord || o.pr.tot) + '</td><td><span class="pill ' + (SLAB[o.status] || 'p-h') + '">' + o.status + '</span>' + (o.by ? '<div class="muted mini">' + esc(o.by) + '</div>' : '') + '</td><td class="act">' +
-            (tab === 'ord' ? '<button class="btn small" data-act="sendord" data-v="' + o.id + '">Bozorga yuborish</button> <button class="btn ghost small" data-act="cancelord" data-v="' + o.id + '">Bekor qilish</button>' : (o.blk ? '<span class="mono mini">' + o.blk + '</span>' : '')) + '</td></tr>';
-          if (open) h += ordDetail(o, x);
+          var x = am[o.aid]; if (!x) return; var open = !!ST.open['ord' + o.id], g = Core.stageOf(o), f = o.fill || { qty: o.pr.ord || o.pr.tot, price: o.price }, xf = o.xf || {};
+          var prog = g === 'Order' ? '<div class="muted mini">' + (xf.filled ? 'bajarildi ' + B.qtyStr(x, xf.filled) + ' / ' + B.qtyStr(x, o.xqty || o.pr.ord) : 'birjada kutilmoqda') + '</div>' : '';
+          h += '<tr class="rowlink" data-act="tog" data-v="ord' + o.id + '"><td>' + B.CHEV.replace('class="chev"', 'class="chev" style="transform:rotate(' + (open ? 180 : 0) + 'deg)"') + '</td><td class="mono">' + o.id + '<div class="muted mini">' + o.sid + '</div></td><td class="nowrap">' + fdt(isO ? o.t : (o.fin || o.t)) + '</td><td><div class="asset-cell">' + B.logo(x, 24) + '<b>' + esc(o.sym) + '</b></div></td><td><span class="pill ' + (o.side === 'BUY' ? 'p-b' : 'p-s') + '">' + o.side + '</span></td><td class="n">' + nf(isO ? o.price : f.price) + (isO && o.ot === 'MARKET' ? '<div class="muted mini">bozor narxida</div>' : '') + '</td><td class="n">' + B.qtyStr(x, isO ? (o.pr.ord || o.pr.tot) : f.qty) + '</td><td>' + esc(o.ex || '—') + (exApi(o.ex) || !isO ? '' : '<div class="muted mini">API yo‘q</div>') + '</td><td>' + stagePill(o) + prog + (o.xerr ? '<div class="bad mini" title="' + esc(o.xerr) + '">Birja xatosi</div>' : '') + (o.by && !isO ? '<div class="muted mini">' + esc(o.by) + '</div>' : '') + '</td><td class="act">' +
+            (g === 'Signal' ? '<button class="btn small" data-act="sendord" data-v="' + o.id + '">Bozorga yuborish</button> <button class="btn ghost small" data-act="cancelord" data-v="' + o.id + '">Bekor qilish</button>' : g === 'Order' ? '<span class="lock">Birjada</span>' : (o.blk ? '<span class="mono mini">' + o.blk + '</span>' : '')) + '</td></tr>';
+          if (open) h += ordDetail(o, x, !isO);
         });
         h += '</tbody></table></div>';
       }

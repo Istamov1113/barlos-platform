@@ -16,6 +16,7 @@ const hist = require('./src/hist');
 const tabular = require('./src/tabular');
 const accounting = require('./src/accounting');
 const quarters = require('./src/quarters');
+const exchanges = require('./src/exchanges');
 const Core = require('./public/core.js');
 const Ind = require('./public/indicators.js');
 
@@ -104,7 +105,7 @@ const ACTIONS = [[/^\/reports\/generate$/, 'Hisobot tayyorladi'], [/^\/consent$/
   [/^\/sessions\/end$/, 'Seansni tugatdi'], [/^\/users\/[^/]+$/, 'Foydalanuvchini o‘zgartirdi'], [/^\/assets$/, 'Aktivni saqladi'], [/^\/accounts$/, 'Hisob ochdi'], [/^\/accounts\/[^/]+$/, 'Hisob sozlamasini o‘zgartirdi'],
   [/^\/tx$/, 'Tranzaksiya kiritdi'], [/^\/tx\/[^/]+\/void$/, 'Tranzaksiyani bekor qildi'], [/^\/tx\/[^/]+\/edit$/, 'Tranzaksiyani tahrirladi'], [/^\/transfers$/, 'Ichki o‘tkazma bajardi'],
   [/^\/wd$/, 'Yechish so‘rovi yubordi'], [/^\/wd\/[^/]+$/, 'Yechish so‘rovini ko‘rib chiqdi'], [/^\/dep$/, 'Depozit so‘rovi yaratdi'], [/^\/dep\/[^/]+\/(paid|cancel)$/, 'Depozit so‘rovini yangiladi'], [/^\/dep\/[^/]+$/, 'Depozit so‘rovini ko‘rib chiqdi'],
-  [/^\/signals$/, 'Qo‘lda signal yubordi'], [/^\/orders\/[^/]+\/send$/, 'Orderni bozorga yubordi'], [/^\/orders\/[^/]+\/cancel$/, 'Orderni bekor qildi'], [/^\/settings$/, 'Sozlamalarni o‘zgartirdi'], [/^\/prices\/refresh$/, 'Narxlarni yangiladi'],
+  [/^\/signals$/, 'Qo‘lda signal yubordi'], [/^\/orders\/[^/]+\/send$/, 'Orderni bozorga yubordi'], [/^\/orders\/[^/]+\/cancel$/, 'Orderni bekor qildi'], [/^\/orders\/[^/]+\/edit$/, 'Signal orderini o‘zgartirdi'], [/^\/orders\/poll$/, 'Birja holatini tekshirdi'], [/^\/exchanges\/test$/, 'Birja ulanishini tekshirdi'], [/^\/settings$/, 'Sozlamalarni o‘zgartirdi'], [/^\/prices\/refresh$/, 'Narxlarni yangiladi'],
   [/^\/bonds\/accept$/, 'Obligatsiya kuponi/so‘ndirishini yozdi'], [/^\/deposits\/accept$/, 'Omonat foizini yozdi'], [/^\/history\/import$/, 'Tarixiy ma‘lumot yukladi'], [/^\/history\/reset$/, 'Aktiv tarixini tozaladi'], [/^\/history\/sync$/, 'Tarixni havoladan yangiladi'], [/^\/me\/profile$/, 'Profilni yangiladi'], [/^\/me\/avatar$/, 'Profil rasmini o‘zgartirdi'], [/^\/chat\/create$/, 'Chat/kanal yaratdi'], [/^\/chat\/[^/]+\/members$/, 'Chat a’zolarini o‘zgartirdi'], [/^\/deposits\/accept-group$/, 'Omonat foizini barcha mijozlarga yozdi'], [/^\/acx\/cfg$/, 'Buxgalteriya sozlamasini o‘zgartirdi'], [/^\/acx\/emp$/, 'Xodimni saqladi (buxgalteriya)'], [/^\/acx\/con$/, 'Shartnomani saqladi (buxgalteriya)'], [/^\/acx\/pay$/, 'Shartnoma to‘lovini kiritdi'], [/^\/acx\/pay\/[^/]+\/void$/, 'Shartnoma to‘lovini bekor qildi'], [/^\/acx\/je$/, 'Qo‘lda buxgalteriya yozuvini kiritdi'], [/^\/acx\/je\/[^/]+\/void$/, 'Buxgalteriya yozuvini bekor qildi'], [/^\/alerts$/, 'Alert saqladi'], [/^\/alerts\/[^/]+\/(del|toggle)$/, 'Alertni o‘zgartirdi']];
 app.use('/api', (req, res, next) => {
   if (req.method === 'GET') return next();
@@ -224,7 +225,7 @@ app.post('/api/reset', wrap((req, res) => {
 /* ---------------- Holat (state) ---------------- */
 function sweepOrders() {
   const t = now();
-  db.all('orders').filter(o => o.status === 'Kutilmoqda' && o.exp < t).forEach(o => { o.status = 'Muddati o’tgan'; o.by = 'Tizim'; o.fin = o.exp; db.put('orders', o); });
+  db.all('orders').filter(o => o.status === 'Kutilmoqda' && o.exp < t).forEach(o => { o.status = 'Muddati o’tgan'; o.stage = 'Bekor'; o.by = 'Tizim'; o.fin = o.exp; db.put('orders', o); });
 }
 function sessionsOf(uid) { return db.db.prepare('SELECT id,ua,ip,created,last FROM sessions WHERE uid=? ORDER BY last DESC').all(uid).map(s => Object.assign({ id: s.id, ip: s.ip, created: s.created, last: s.last }, auth.parseUA(s.ua))); }
 app.get('/api/version', ANY, (req, res) => res.json({ rev: db.rev() }));
@@ -246,7 +247,7 @@ app.get('/api/state', ANY, wrap((req, res) => {
   if (u.role === 'client' && !out.me.consent.ok) out.contract = contract.pub();
   out.alerts = db.all('alerts').filter(a => a.uid === u.id); out.alog = db.all('alog').filter(a => a.uid === u.id).sort((x, y) => y.t - x.t).slice(0, 20);
   if (isStaff) {
-    out.signals = db.all('signals'); out.orders = db.all('orders');
+    out.signals = db.all('signals'); out.orders = db.all('orders'); out.exch = exchanges.info();
     out.settings.autoRel = st.autoRel; out.settings.priceMin = st.priceMin; out.settings.priceT = st.priceT; out.settings.fxAuto = st.fxAuto;
   }
   if (u.role === 'admin') {
@@ -536,33 +537,102 @@ app.post('/api/wd/:id', AO, wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-/* ---------------- Signal -> order -> bitim ---------------- */
+/* ---------------- Signal -> order -> bitim ----------------
+   Bosqichlar (order.stage):  Signal  -> Order  -> Yakunlangan
+   Signal: signal keldi, bitim hisob-kitobi tayyor; admin birja/narx/hajmni o'zgartira oladi va "Bozorga yuborish"ni bosadi.
+   Order : order BIRJAGA joylangan; faqat birja API orqali kuzatiladi, o'zgartirib bo'lmaydi.
+   Yakunlangan: birja API orqali bajarilgani tasdiqlandi; mijozlarga HAQIQIY bajarilgan narx/hajm bo'yicha taqsimlandi. */
 function newSignal(x, side, price, srcName) {
   const s = { id: 'S-' + (1000 + db.seq('sig')), t: now(), aid: x.id, sym: x.sym, pair: x.group === 'kripto' ? x.sym + 'USDT' : (x.src && x.src.type === 'bitget' ? x.src.ref : x.sym), side, price, src: srcName, ord: null };
   return s;
 }
 function newOrder(S, s, x) {
   const pr = Core.poolRun(S, x, s.side, s.price), st = settings();
-  return { id: 'O-' + (2000 + db.seq('ord')), sid: s.id, aid: x.id, sym: x.sym, side: s.side, price: s.price, t: now(), exp: now() + 864e5, rel: st.autoRel ? 'Avtomatik' : 'Operator', pr: Core.snap(pr), status: 'Kutilmoqda', by: null, blk: null, fin: null };
+  return { id: 'O-' + (2000 + db.seq('ord')), sid: s.id, aid: x.id, sym: x.sym, side: s.side, price: s.price, t: now(), exp: now() + 864e5, rel: st.autoRel ? 'Avtomatik' : 'Operator', ex: Core.venueOf(x), ot: 'LIMIT', stage: 'Signal', pr: Core.snap(pr), status: 'Kutilmoqda', by: null, blk: null, fin: null };
 }
+/* birja juftligi: Binance/Bitget uchun BTCUSDT ko'rinishida, IBKR uchun aktiv belgisi */
+function pairFor(x, ex) {
+  if (ex === 'IBKR') return x.sym;
+  if (x.src && x.src.type === 'bitget' && x.src.ref) return x.src.ref;
+  if (x.group === 'kripto') return x.sym + 'USDT';
+  throw bad(ex + ' uchun ' + x.sym + ' juftligi aniqlanmadi. Aktiv manbasini (Bitget) belgilang yoki birjani o‘zgartiring.');
+}
+const sending = new Set();
+/* API'si yo'q birja (Jet.uz, Bank): admin qo'lda bajarilgan narxni kiritadi -> darhol Yakunlangan (API bilan tekshirib bo'lmaydi) */
 function doSend(o, by, auto, fillPrice) {
   return db.tx(() => {
     const S = loadS(), x = S.assets.filter(a => a.id === o.aid)[0], price = fillPrice > 0 ? fillPrice : o.price;
-    const pr = Core.poolRun(S, x, o.side, price); o.pr = Core.snap(pr); o.price = price;
-    if (pr.state === 'none') { o.status = 'Rad etilgan'; o.by = 'Tizim'; o.fin = now(); db.put('orders', o); return 'rad'; }
+    const pr = Core.poolRun(S, x, o.side, price, undefined, o.ordOv); o.pr = Core.snap(pr); o.price = price;
+    if (pr.state === 'none') { o.status = 'Rad etilgan'; o.stage = 'Bekor'; o.by = 'Tizim'; o.fin = now(); db.put('orders', o); return 'rad'; }
     if (pr.state !== 'fill') { db.put('orders', o); return 'wait'; }
     const blk = 'B' + (10000 + db.seq('blk')), t = now();
-    Core.orderTx(S, o, pr, by, auto ? 'Avtomat' : 'Operator', blk, t).forEach(r => writeTx(S, r, by, r.chan, blk, { skipBalance: true }));
-    o.status = 'Bajarilgan'; o.by = by; o.fin = t; o.blk = blk; db.put('orders', o); return 'ok';
+    Core.orderTx(S, Object.assign({}, o, { price }), pr, by, auto ? 'Avtomat' : 'Operator', blk, t).forEach(r => writeTx(S, Object.assign(r, { ex: o.ex || r.ex }), by, r.chan, blk, { skipBalance: true }));
+    o.status = 'Bajarilgan'; o.stage = 'Yakunlangan'; o.by = by; o.fin = t; o.blk = blk; o.fill = { qty: pr.ord, price, fee: pr.feeTot, feeAsset: pr.feeAsset, at: t, manual: true }; db.put('orders', o); return 'ok';
   });
+}
+/* Signal bosqichidagi orderni birjaga joylash (Signal -> Order) */
+async function placeOrder(o, by) {
+  if (sending.has(o.id)) throw bad('Order hozir yuborilmoqda.');
+  sending.add(o.id);
+  try {
+    const cur = db.get('orders', o.id); if (!cur || Core.stageOf(cur) !== 'Signal') throw bad('Order Signal bosqichida emas.');
+    const ad = exchanges.get(cur.ex); if (!ad) throw bad(cur.ex + ' uchun API yo‘q.');
+    if (!ad.ready()) throw bad(cur.ex + ' API ulanmagan: .env fayliga ' + ad.need + ' yozing.');
+    const S = loadS(), x = S.assets.filter(a => a.id === cur.aid)[0], pr = Core.poolRun(S, x, cur.side, cur.price, undefined, cur.ordOv);
+    cur.pr = Core.snap(pr);
+    if (pr.state === 'none') { cur.status = 'Rad etilgan'; cur.stage = 'Bekor'; cur.by = 'Tizim'; cur.fin = now(); db.put('orders', cur); throw bad('Hech bir hisob uchun ruxsat yo‘q: order rad etildi.'); }
+    if (pr.state !== 'fill') { db.put('orders', cur); throw bad('Umumiy hajm minimal summadan kam: bozorga yuborib bo‘lmaydi.'); }
+    const pair = pairFor(x, cur.ex);
+    const r = await ad.place({ pair, sym: x.sym, side: cur.side, qty: pr.ord, price: cur.price, ot: cur.ot || 'LIMIT', cid: cur.id });
+    Object.assign(cur, { stage: 'Order', status: 'Birjada', by, xid: r.xid, xpair: pair, xqty: r.qty, xprice: r.price, xconid: r.xconid, xsent: now(), xf: { filled: 0, avg: 0, at: now() }, xerr: null });
+    db.put('orders', cur); return cur;
+  } finally { sending.delete(o.id); }
+}
+/* Birja bajarilganini tasdiqlagach: mijozlarga haqiqiy bajarilgan hajm/narx bo'yicha taqsimlash (Order -> Yakunlangan) */
+function finalizeOrder(id, fill) {
+  return db.tx(() => {
+    const cur = db.get('orders', id); if (!cur || Core.stageOf(cur) !== 'Order') return null;
+    const S = loadS(), blk = 'B' + (10000 + db.seq('blk')), t = now();
+    const rows = Core.fillTx(S, cur, fill, 'Birja API', 'Avtomat', blk, t).filter(r => {
+      if (r.type === 'SELL') { const a = S.accounts.filter(z => z.id === r.acc)[0], it = a && Core.view(S, a).items.filter(i => i.x.id === r.aid)[0]; r.amount = Math.min(r.amount, it ? it.qty : 0); }
+      return r.amount > 0;
+    });
+    rows.forEach(r => writeTx(S, r, 'Birja API', r.chan, blk, { skipBalance: true }));
+    Object.assign(cur, { stage: 'Yakunlangan', status: 'Bajarilgan', by: 'Birja API', fin: t, blk, xerr: null, xf: { filled: fill.qty, avg: fill.price, at: t }, fill: { qty: fill.qty, price: fill.price, fee: fill.fee, feeAsset: fill.feeAsset, partial: !!fill.partial, at: t } });
+    db.put('orders', cur); return cur;
+  });
+}
+/* Order bosqichidagi orderlar holatini birjadan so'rash */
+let polling = false;
+async function pollOrders() {
+  if (polling) return { n: 0, done: 0 }; polling = true; let n = 0, done = 0;
+  try {
+    for (const o of db.all('orders').filter(z => Core.stageOf(z) === 'Order')) {
+      n++; const ad = exchanges.get(o.ex);
+      try {
+        if (!ad || !ad.ready()) throw bad((o.ex || '?') + ' API ulanmagan.');
+        const r = await ad.status(o), prev = (db.get('orders', o.id) || {}).stage;
+        if (prev !== 'Order') continue;
+        if (r.state === 'filled' || ((r.state === 'canceled' || r.state === 'rejected') && r.filled > 0)) {
+          const f = finalizeOrder(o.id, { qty: r.filled, price: r.avg || o.price, fee: r.fee, feeAsset: r.feeAsset, partial: r.state !== 'filled' }); if (f) done++; continue;
+        }
+        if (r.state === 'canceled' || r.state === 'rejected') { const c = db.get('orders', o.id); Object.assign(c, { stage: 'Bekor', status: r.state === 'rejected' ? 'Birja rad etdi' : 'Birja bekor qildi', by: 'Birja API', fin: now(), xerr: null }); db.put('orders', c); continue; }
+        if (!o.xf || o.xf.filled !== r.filled || o.xf.avg !== r.avg || o.xerr) { const c = db.get('orders', o.id); c.xf = { filled: r.filled, avg: r.avg, at: now() }; c.xerr = null; db.put('orders', c); }
+      } catch (e) {
+        const c = db.get('orders', o.id); if (c && Core.stageOf(c) === 'Order' && c.xerr !== e.message.slice(0, 200)) { c.xerr = e.message.slice(0, 200); db.put('orders', c); }
+      }
+    }
+  } finally { polling = false; }
+  return { n, done };
 }
 function receiveSignal(x, side, price, srcName) {
   const S = loadS(), s = newSignal(x, side, price, srcName), o = newOrder(S, s, x);
   s.ord = o.id; db.put('signals', s);
-  if (o.pr.state === 'none') { o.status = 'Rad etilgan'; o.by = 'Tizim'; o.fin = now(); db.put('orders', o); return { s, o, msg: 'Hech bir hisob uchun ruxsat yo‘q, order rad etildi.' }; }
+  if (o.pr.state === 'none') { o.status = 'Rad etilgan'; o.stage = 'Bekor'; o.by = 'Tizim'; o.fin = now(); db.put('orders', o); return { s, o, msg: 'Hech bir hisob uchun ruxsat yo‘q, order rad etildi.' }; }
   db.put('orders', o);
-  if (settings().autoRel && o.pr.state === 'fill') { const r = doSend(o, 'Tizim', true); return { s, o, msg: r === 'ok' ? 'Avtomatik bajarildi.' : 'Order yaratildi.' }; }
-  return { s, o, msg: 'Signal saqlandi, order yaratildi.' };
+  /* avtomatik rejim: faqat API ulangan birjada order o'zi joylanadi (qolgan hollarda admin tasdiqlaydi) */
+  if (settings().autoRel && o.pr.state === 'fill') { const ad = exchanges.get(o.ex); if (ad && ad.ready()) { placeOrder(o, 'Tizim').catch(e => { const c = db.get('orders', o.id); if (c && Core.stageOf(c) === 'Signal') { c.xerr = e.message.slice(0, 200); db.put('orders', c); } console.error('avto order:', e.message); }); return { s, o, msg: 'Signal saqlandi, order birjaga yuborilmoqda.' }; } }
+  return { s, o, msg: 'Signal saqlandi, hisob-kitob tayyor.' };
 }
 app.post('/api/signals', A, wrap((req, res) => {
   const b = req.body || {}, S = loadS(), x = S.assets.filter(a => a.id === b.aid && !a.archived)[0];
@@ -571,15 +641,40 @@ app.post('/api/signals', A, wrap((req, res) => {
   const price = +(b.price || x.price); if (!(price > 0)) throw bad('Narx noto‘g‘ri.');
   req.ad = x.sym + ' ' + side + ' @ ' + price; const r = receiveSignal(x, side, price, 'Qo‘lda (admin)'); res.json({ ok: true, msg: r.msg, order: r.o.id });
 }));
-app.post('/api/orders/:id/send', A, wrap((req, res) => {
-  const o = db.get('orders', req.params.id); if (!o || o.status !== 'Kutilmoqda') throw bad('Order topilmadi yoki yakunlangan.', 404);
-  req.ad = o.id + ' ' + o.sym + ' ' + o.side; const r = doSend(o, 'Admin', false, +(req.body || {}).price);
+/* Signal bosqichida admin o'zgartiradi: birja, narx, hajm, order turi */
+app.post('/api/orders/:id/edit', A, wrap((req, res) => {
+  const o = db.get('orders', req.params.id); if (!o) throw bad('Order topilmadi.', 404);
+  if (Core.stageOf(o) !== 'Signal' || sending.has(o.id)) throw bad('Faqat Signal bosqichidagi orderni o‘zgartirish mumkin.');
+  const b = req.body || {}, S = loadS(), x = S.assets.filter(a => a.id === o.aid)[0]; if (!x) throw bad('Aktiv topilmadi.');
+  if (b.ex !== undefined) { if (Core.exchOpts(x).indexOf(b.ex) < 0 && !(b.ex === 'Mock' && exchanges.get('Mock'))) throw bad('Bu aktiv uchun birja noto‘g‘ri: ' + b.ex); o.ex = b.ex; }
+  if (b.price !== undefined && b.price !== '') { const v = +b.price; if (!(v > 0)) throw bad('Narx musbat bo‘lsin.'); o.price = v; }
+  if (b.ot !== undefined) { if (['LIMIT', 'MARKET'].indexOf(b.ot) < 0) throw bad('Order turi noto‘g‘ri.'); o.ot = b.ot; }
+  if (b.qty !== undefined) { const v = +b.qty; if (b.qty === '' || v === 0) delete o.ordOv; else if (!(v > 0)) throw bad('Hajm musbat bo‘lsin.'); else o.ordOv = v; }
+  const pr = Core.poolRun(S, x, o.side, o.price, undefined, o.ordOv);
+  if (o.ordOv && pr.tot > 0 && o.ordOv > pr.tot * (1 + 1e-9)) throw bad('Hajm hisoblangan umumiy hajmdan (' + +pr.tot.toFixed(8) + ') oshmasin.');
+  o.pr = Core.snap(pr); o.edited = { by: req.user.email, t: now() }; db.put('orders', o);
+  req.ad = o.id + ' ' + o.sym + ' → ' + o.ex + ' @ ' + o.price + (o.ordOv ? ' hajm ' + o.ordOv : ''); res.json({ ok: true });
+}));
+app.post('/api/orders/:id/send', A, wrap(async (req, res) => {
+  const o = db.get('orders', req.params.id); if (!o || Core.stageOf(o) !== 'Signal') throw bad('Order topilmadi yoki Signal bosqichida emas.', 404);
+  req.ad = o.id + ' ' + o.sym + ' ' + o.side + ' → ' + o.ex;
+  if (exchanges.get(o.ex)) { const c = await placeOrder(o, 'Admin'); return res.json({ ok: true, result: 'order', xid: c.xid }); }
+  /* API'siz birja: bajarilgan narxni qo'lda kiritish */
+  const r = doSend(o, 'Admin', false, +(req.body || {}).price);
   if (r === 'wait') throw bad('Umumiy hajm minimal summadan kam: bozorga yuborib bo‘lmaydi.');
   res.json({ ok: true, result: r });
 }));
 app.post('/api/orders/:id/cancel', A, wrap((req, res) => {
-  const o = db.get('orders', req.params.id); if (!o || o.status !== 'Kutilmoqda') throw bad('Order topilmadi yoki yakunlangan.', 404);
-  req.ad = o.id + ' ' + o.sym; o.status = 'Bekor qilingan'; o.by = 'Admin'; o.fin = now(); db.put('orders', o); res.json({ ok: true });
+  const o = db.get('orders', req.params.id); if (!o || Core.stageOf(o) !== 'Signal' || sending.has(o.id)) throw bad('Faqat Signal bosqichidagi orderni bekor qilish mumkin.', 404);
+  req.ad = o.id + ' ' + o.sym; o.status = 'Bekor qilingan'; o.stage = 'Bekor'; o.by = 'Admin'; o.fin = now(); db.put('orders', o); res.json({ ok: true });
+}));
+/* Birja holatini hozir tekshirish (avtomatik ham har 15 soniyada tekshiriladi) */
+app.post('/api/orders/poll', A, wrap(async (req, res) => { const r = await pollOrders(); req.ad = 'Birja holati tekshirildi'; res.json(Object.assign({ ok: true }, r)); }));
+/* Birja ulanishini tekshirish */
+app.post('/api/exchanges/test', A, wrap(async (req, res) => {
+  const id = String((req.body || {}).id || ''), ad = exchanges.get(id); if (!ad) throw bad('Noma’lum birja.');
+  if (!ad.ready()) throw bad(id + ': kalit kiritilmagan. .env fayliga ' + ad.need + ' yozing va serverni qayta ishga tushiring.');
+  req.ad = id + ' ulanishi tekshirildi'; res.json({ ok: true, msg: await ad.ping() });
 }));
 
 /* ---------------- Sozlamalar, narxlar, import ---------------- */
@@ -1024,7 +1119,7 @@ function bootAdmin() {
 }
 const PORT = +(process.env.PORT || 3000);
 if (require.main === module) {
-  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
+  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => pollOrders().catch(e => console.error('birja tekshiruvi:', e.message)), 15e3); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
   /* uzse.uz kunlik yangilash: har 30 daqiqada (havola sozlangan bo'lsa); seans 16:00 dan keyin ham ishlaydi */
   setInterval(() => syncAllHist().catch(e => console.error('tarix yangilash:', e.message)), 5 * 60e3); setTimeout(() => { db.all('assets').forEach(x => seedPrice(x.id)); syncAllHist().catch(() => { }); }, 15000);
   app.listen(PORT, () => {

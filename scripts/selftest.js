@@ -2,7 +2,7 @@
 /* API sinovi: serverni vaqtincha bazada ishga tushirib, asosiy oqimni tekshiradi.  npm test */
 const path = require('path'), os = require('os'), fs = require('fs');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'barlos-test-'));
-process.env.ADMIN_PASSWORD = 'AdminParol123'; process.env.ADMIN_EMAIL = 'eldoristamov381@gmail.com';
+process.env.EXCH_MOCK = '1'; process.env.ADMIN_PASSWORD = 'AdminParol123'; process.env.ADMIN_EMAIL = 'eldoristamov381@gmail.com';
 const { app } = require('../server.js'); const auth = require('../src/auth');
 if (!auth.find(process.env.ADMIN_EMAIL)) auth.createUser({ email: process.env.ADMIN_EMAIL, name: 'Administrator', password: process.env.ADMIN_PASSWORD, verified: true });
 let pass = 0, fail = 0; const ok = (c, m) => { if (c) pass++; else { fail++; console.log('XATO:', m); } };
@@ -51,9 +51,41 @@ const srv = app.listen(0, async () => {
     r = await adm('POST', '/api/tx', { acc: acc1, aid: A.BTC, type: 'BUY', amount: 0.005, price: 80000 }); ok(r.s === 200, 'qayta BUY');
     /* signal -> order */
     r = await adm('POST', '/api/signals', { aid: A.BTC, side: 'SELL', price: 80000 }); ok(r.s === 200, 'signal: ' + JSON.stringify(r.j));
-    st = await adm('GET', '/api/state'); ok(st.j.orders.length === 1 && st.j.signals.length === 1, 'order yaratildi'); const ord = st.j.orders[0]; ok(ord.status === 'Kutilmoqda', 'order kutilmoqda: ' + ord.status);
-    r = await adm('POST', '/api/orders/' + ord.id + '/send', {}); ok(r.s === 200 && r.j.result === 'ok', 'order yuborildi: ' + JSON.stringify(r.j));
-    st = await adm('GET', '/api/state'); ok(st.j.orders[0].status === 'Bajarilgan', 'order bajarildi'); const blk = st.j.tx.filter(t => t.blk === st.j.orders[0].blk); ok(blk.length >= 1, 'umumiy bitim yozuvlari');
+    st = await adm('GET', '/api/state'); ok(st.j.orders.length === 1 && st.j.signals.length === 1, 'order yaratildi'); const ord = st.j.orders[0]; ok(ord.status === 'Kutilmoqda' && ord.stage === 'Signal', 'order Signal bosqichida: ' + ord.status + '/' + ord.stage);
+    ok(ord.ex === 'Bitget' && Array.isArray(st.j.exch) && st.j.exch.some(e => e.id === 'Binance' && e.ready === false), 'birja nomi va API holati: ' + ord.ex);
+    /* Signal bosqichi: admin birja/narx/hajmni o'zgartiradi */
+    r = await cl('POST', '/api/orders/' + ord.id + '/edit', { ex: 'Binance' }); ok(r.s === 403, 'mijoz order o‘zgartira olmaydi');
+    r = await adm('POST', '/api/orders/' + ord.id + '/edit', { ex: 'Jet.uz' }); ok(r.s === 400, 'aktivga mos kelmaydigan birja rad etiladi: ' + r.s);
+    r = await adm('POST', '/api/orders/' + ord.id + '/edit', { ex: 'Binance' }); ok(r.s === 200, 'birja Binance ga o‘zgartirildi: ' + JSON.stringify(r.j));
+    r = await adm('POST', '/api/orders/' + ord.id + '/send', {}); ok(r.s === 400 && /API ulanmagan/.test(r.j.error), 'kalitsiz Binance ga yuborilmaydi: ' + JSON.stringify(r.j));
+    st = await adm('GET', '/api/state'); const txN = st.j.tx.length; ok(st.j.orders[0].stage === 'Signal', 'xatoda Signal bosqichida qoladi');
+    r = await adm('POST', '/api/orders/' + ord.id + '/edit', { price: 79000, qty: 999 }); ok(r.s === 400, 'hisoblangan hajmdan oshiq hajm rad etiladi: ' + JSON.stringify(r.j));
+    const tot0 = st.j.orders[0].pr.tot; r = await adm('POST', '/api/orders/' + ord.id + '/edit', { ex: 'Mock', price: 79000, qty: tot0 / 2 }); ok(r.s === 200, 'narx va hajm o‘zgartirildi: ' + JSON.stringify(r.j));
+    st = await adm('GET', '/api/state'); ok(st.j.orders[0].price === 79000 && Math.abs(st.j.orders[0].pr.ord - tot0 / 2) < 1e-4 && st.j.orders[0].ex === 'Mock', 'hisob-kitob qayta bajarildi: ' + st.j.orders[0].pr.ord + ' / ' + tot0);
+    const plan = st.j.orders[0].pr.rows.filter(z => z.alloc > 0);
+    r = await adm('POST', '/api/orders/' + ord.id + '/send', {}); ok(r.s === 200 && r.j.result === 'order', 'order birjaga yuborildi: ' + JSON.stringify(r.j));
+    st = await adm('GET', '/api/state'); ok(st.j.orders[0].stage === 'Order' && st.j.orders[0].status === 'Birjada' && st.j.orders[0].xid, 'Order bosqichi: ' + st.j.orders[0].stage);
+    ok(st.j.tx.length === txN, 'Order bosqichida mijozga bitim yozilmaydi');
+    r = await adm('POST', '/api/orders/' + ord.id + '/edit', { price: 1 }); ok(r.s === 400, 'Order bosqichida o‘zgartirib bo‘lmaydi');
+    r = await adm('POST', '/api/orders/' + ord.id + '/cancel', {}); ok(r.s === 404 || r.s === 400, 'Order bosqichida bekor qilib bo‘lmaydi: ' + r.s);
+    r = await adm('POST', '/api/orders/' + ord.id + '/send', {}); ok(r.s === 404, 'ikkinchi marta yuborib bo‘lmaydi');
+    r = await adm('POST', '/api/orders/poll', {}); ok(r.s === 200 && r.j.n === 1 && r.j.done === 0, 'birja tekshiruvi (qisman): ' + JSON.stringify(r.j));
+    st = await adm('GET', '/api/state'); ok(st.j.orders[0].stage === 'Order' && st.j.orders[0].xf.filled > 0, 'qisman bajarilish Order bosqichida ko‘rinadi'); ok(st.j.tx.length === txN, 'qisman holatda hali bitim yo‘q');
+    r = await cl('POST', '/api/orders/poll', {}); ok(r.s === 403, 'mijoz birja tekshiruvini ishga tushira olmaydi');
+    r = await adm('POST', '/api/orders/poll', {}); ok(r.s === 200 && r.j.done === 1, 'birja tekshiruvi (to‘liq): ' + JSON.stringify(r.j));
+    st = await adm('GET', '/api/state'); const fo = st.j.orders[0]; ok(fo.stage === 'Yakunlangan' && fo.status === 'Bajarilgan' && fo.fill && !fo.fill.manual, 'Yakunlangan bosqichi (API tasdiqlagan)'); const blk = st.j.tx.filter(t => t.blk === fo.blk); ok(blk.length >= 1, 'umumiy bitim yozuvlari');
+    ok(blk.every(t => t.ex === 'Mock' && Math.abs(t.price - 79079) < 1e-6 && t.type === 'SELL'), 'bitim haqiqiy bajarilgan narx va birja bilan yozildi: ' + JSON.stringify(blk.map(t => [t.ex, t.price])));
+    ok(Math.abs(blk.reduce((q, t) => q + t.amount, 0) - fo.fill.qty) < 1e-6 && Math.abs(fo.fill.qty - fo.pr.ord) < 1e-6, 'mijozlarga taqsimot bajarilgan hajmga teng');
+    r = await adm('POST', '/api/orders/poll', {}); ok(r.s === 200 && r.j.n === 0, 'yakunlangan order qayta tekshirilmaydi'); st = await adm('GET', '/api/state'); ok(st.j.tx.filter(t => t.blk === fo.blk).length === blk.length && st.j.tx.length === txN + blk.length, 'ikki marta yozilmadi');
+    r = await adm('POST', '/api/exchanges/test', { id: 'Binance' }); ok(r.s === 400 && /kalit/.test(r.j.error), 'ulanish tekshiruvi: kalit yo‘q xabari');
+    r = await adm('POST', '/api/exchanges/test', { id: 'Mock' }); ok(r.s === 200, 'sinov birjasi ulanishi');
+    /* API'siz birja (Jet.uz): qo'lda tasdiq -> Yakunlangan (qo'lda belgi bilan) */
+    { const un = st.j.assets.filter(a => a.sym === 'UZNF')[0]; r = await adm('POST', '/api/signals', { aid: un.id, side: 'BUY', price: 6600 }); ok(r.s === 200, 'milliy aktiv signali');
+      st = await adm('GET', '/api/state'); const uo = st.j.orders.filter(o => o.sym === 'UZNF')[0]; ok(uo && uo.ex === 'Jet.uz' && uo.stage === 'Signal', 'Jet.uz birjasi ko‘rinadi');
+      if (uo.pr.state === 'fill') { r = await adm('POST', '/api/orders/' + uo.id + '/send', { price: 6650 }); ok(r.s === 200, 'API siz birja qo‘lda tasdiqlandi: ' + JSON.stringify(r.j)); st = await adm('GET', '/api/state'); const u2 = st.j.orders.filter(o => o.id === uo.id)[0]; ok(u2.stage === 'Yakunlangan' && u2.fill.manual === true, 'qo‘lda tasdiq belgisi'); }
+      else { r = await adm('POST', '/api/orders/' + uo.id + '/cancel', {}); ok(r.s === 200, 'kam hajmli signal bekor qilindi'); st = await adm('GET', '/api/state'); ok(st.j.orders.filter(o => o.id === uo.id)[0].stage === 'Bekor', 'bekor -> Bekor bosqichi'); } }
+    /* avto rejim: API ulangan birjada order o'zi joylanadi */
+    r = await adm('POST', '/api/settings', { autoRel: true }); r = await adm('POST', '/api/orders/' + ord.id + '/edit', { ex: 'Bitget' }); ok(r.s === 404 || r.s === 400, 'yakunlangan orderni o‘zgartirib bo‘lmaydi'); r = await adm('POST', '/api/settings', { autoRel: false });
     /* havola shabloni: STK/BND avtomatik, {type}; Bitget zaxira manba; 429 */
     { const T = 'https://uzse.uz/isu_infos/STK/export?isu_cd={isin}&from={from}&to={to}&k={type}', f = (g, ref) => require('../server.js').fillTpl(T, { group: g, sym: 'X', src: { type: 'uzse', ref } }, new Date(Date.UTC(2026, 0, 5)), new Date(Date.UTC(2026, 10, 4)));
       ok(/isu_infos\/STK\/export\?isu_cd=UZ7037560008&from=05.01.2026&to=04.11.2026&k=STK$/.test(f('milliy', 'UZ7037560008')), 'aksiya havolasi: ' + f('milliy', 'UZ7037560008'));

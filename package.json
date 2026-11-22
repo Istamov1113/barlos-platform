@@ -1,6 +1,6 @@
 {
   "name": "barlos",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "private": true,
   "description": "BARLOS - avtomatik investitsiya portfeli boshqaruvi",
   "main": "server.js",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --no-warnings server.js",
     "setup": "node --no-warnings scripts/create-admin.js",
-    "test": "node --no-warnings scripts/selftest.js",
+    "test": "node --no-warnings scripts/selftest.js && node --no-warnings scripts/exchtest.js",
     "backup": "node --no-warnings scripts/backup.js"
   },
   "dependencies": {

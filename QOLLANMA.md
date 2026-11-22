@@ -19,7 +19,7 @@ Avval A qismni bajaring. Hammasi ishlashiga ishonch hosil qilgach, B ga o'ting.
 - **Avto savdo**: chartdagi alert yoki qo‘lda signal → har bir mijoz uchun alohida hisob → bitta umumiy order → mijozlarga taqsimot.
 - **Hech narsa o'chirilmaydi**: tranzaksiya faqat sabab bilan "Bekor qilingan" deb belgilanadi, aktiv faqat arxivlanadi.
 
-> **Muhim haqiqat.** "Bozorga yuborish" tugmasi bitimni **hisobga yozadi** (mijozlar hisobiga taqsimlaydi). U Bitget yoki IBKR da haqiqiy order **joylashtirmaydi**. Haqiqiy savdoni birjada o'zingiz (yoki operator) bajarasiz, so'ng shu yerda bajarilgan narxni kiritib tasdiqlaysiz. Birjaga avtomatik ulanish alohida, keyingi bosqich (API kalitlari, xavfsizlik va test talab qiladi).
+> **Muhim.** 2.17.0 dan boshlab Avto savdo birjaga (Binance, Bitget, IBKR) **haqiqiy order joylaydi** — kalitlarni o'zingiz `.env` ga yozasiz (pastdagi 2.17.0 bo'limi). Kalit kiritilmasa, sayt order joylamaydi va xabar beradi. Jet.uz va Bank uchun API yo'q: ular avvalgidek qo'lda tasdiqlanadi.
 
 > **Narx import qilish haqida halol eslatma.** Bitget, CoinMarketCap, Finviz, uzse.uz dan narx olish kodi yozilgan, lekin men uni o'z muhitimda jonli sinay olmadim (u yerdan bu saytlarga chiqish yopiq). Shuning uchun sizning serveringizda birinchi marta "Aktivlar → Manbalarni tekshirish" tugmasini bosing: har bir manba uchun yashil/qizil natija ko'rasiz. Qizil bo'lsa, xato matnini menga yuboring, tuzataman. Narxni har doim qo'lda ham kiritish mumkin.
 
@@ -52,6 +52,35 @@ Server o'zi ham har 6 soatda `data/backups` papkasiga zaxira nusxa saqlab boradi
 1. 2.2.1 ni o'rnating (data/ va .env ga tegmang), serverni qayta ishga tushiring.
 2. Aktivlar → Tarixiy ma'lumotlar → "Barcha tarixni tozalash".
 3. Barcha uzse.uz fayllarini (nomida ISIN bor) bitta bo'lib shu bo'limdagi "Yuklash" orqali qayta yuklang. Har bir aktivning "Manba kodi"da ISIN bo'lishi shart.
+
+## 2.17.0: Avto savdo — Signal → Order → Yakunlangan (Binance, Bitget, IBKR API)
+
+Faqat **Avto savdo** o'zgardi. Bosh sahifa, Aktivlar, Chart va mijoz menyusi o'zgarmadi.
+
+**Bosqichlar (har bir orderda "Status" ustuni):**
+1. **Signal** — signal keldi (**Signallar** bo'limida ko'rinadi) va bir vaqtning o'zida **Orderlar** bo'limida hisob-kitob tayyor bo'ladi: har mijozga qancha, jami hajm, komissiya va **birja nomi**. Shu bosqichda admin o'zgartira oladi: **birja**, **narx**, **hajm** (hisoblanganidan oshmaydi), **order turi** (limit / bozor narxida) — qatorni oching, "O'zgartirish" → "Saqlash va qayta hisoblash". Keyin **Bozorga yuborish** yoki **Bekor qilish**.
+2. **Order** — order birjaga joylandi. Bu bosqich faqat API orqali aniqlanadi: o'zgartirib ham, bekor qilib ham bo'lmaydi (kerak bo'lsa birjaning o'zida bekor qilinadi — sayt buni ko'rib "Birja bekor qildi" deb belgilaydi). Mijozlar hisobiga hali hech narsa yozilmaydi.
+3. **Yakunlangan** — birja API orqali bajarilganini tasdiqlaydi; bitim mijozlarga **haqiqiy bajarilgan narx va hajm** bo'yicha taqsimlanadi. **Yakunlangan** bo'limida faqat bajarilgan bitimlar va mijozlarga taqsimot ko'rinadi (rad etilgan/bekor qilinganlar faqat **Signallar** ro'yxatidagi Status ustunida).
+
+Sayt birja holatini har 15 soniyada o'zi tekshiradi; "Birja holatini hozir tekshirish" tugmasi ham bor. Qisman bajarilsa, order **Order** bosqichida qoladi; birja to'liq bajarganda (yoki qisman bajarilib qolganini bekor qilganda) bajarilgan hajm bo'yicha yakunlanadi.
+
+**Birjalarni ulash (.env faylida):**
+```
+BINANCE_API_KEY=...
+BINANCE_API_SECRET=...
+BITGET_API_KEY=...
+BITGET_API_SECRET=...
+BITGET_API_PASSPHRASE=...
+IBKR_ACCOUNT=U1234567
+# IBKR_URL=https://localhost:5000/v1/api   (standart)
+```
+- Kalitga faqat **Spot savdo (Trade)** ruxsatini bering, **Yechish (Withdraw)** ruxsatini bermang. Imkon bo'lsa, kalitni server IP manziliga bog'lang.
+- IBKR: kompyuteringizda *Client Portal Gateway* ishlab turishi va brauzerda tizimga kirilgan bo'lishi kerak (IBKR sessiyasi vaqti-vaqti bilan tugaydi — qayta kiring).
+- `.env` ni o'zgartirgach serverni qayta ishga tushiring. Avto savdo → "Birjalar (API)" qatorida har birjaning holati va **Tekshirish** tugmasi bor.
+- Aktivning birjasi sukut bo'yicha: kripto → Bitget, xalqaro/metall → IBKR. Admin buni har bir signalda o'zgartiradi (kripto: Bitget/Binance; xalqaro/metall: IBKR/Bitget).
+- **Jet.uz va Bank** (milliy aksiya, obligatsiya) uchun API yo'q: ular Signal bosqichida narxni qo'lda kiritib tasdiqlanadi va "qo'lda tasdiqlangan" deb belgilanadi. **Avtomatik bozorga chiqarish** yoqilsa, faqat API ulangan birjada order o'zi joylanadi.
+
+> **Halol eslatma.** Birja adapterlari soxta (lokal) server bilan sinalgan: so'rov shakli, imzo, yaxlitlash va javoblarni o'qish (`node scripts/exchtest.js`). Haqiqiy Binance/Bitget/IBKR ga men bu yerdan ulana olmayman, shuning uchun birinchi marta **kichik summa** bilan sinab ko'ring: "Tekshirish" tugmasi → bitta kichik signal → Order → Yakunlangan.
 
 ## 2.16.0: soddalashtirish (Yangi amal, Chorakni yopish, Hisobotlar markazi, Sozlamalar)
 
