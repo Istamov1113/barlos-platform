@@ -2,7 +2,7 @@
 /* API sinovi: serverni vaqtincha bazada ishga tushirib, asosiy oqimni tekshiradi.  npm test */
 const path = require('path'), os = require('os'), fs = require('fs');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'barlos-test-'));
-process.env.EXCH_MOCK = '1'; process.env.ADMIN_PASSWORD = 'AdminParol123'; process.env.ADMIN_EMAIL = 'eldoristamov381@gmail.com';
+process.env.EXCH_MOCK = '1'; process.env.PAY_MOCK = '1'; process.env.ADMIN_PASSWORD = 'AdminParol123'; process.env.ADMIN_EMAIL = 'eldoristamov381@gmail.com';
 const { app } = require('../server.js'); const auth = require('../src/auth');
 if (!auth.find(process.env.ADMIN_EMAIL)) auth.createUser({ email: process.env.ADMIN_EMAIL, name: 'Administrator', password: process.env.ADMIN_PASSWORD, verified: true });
 let pass = 0, fail = 0; const ok = (c, m) => { if (c) pass++; else { fail++; console.log('XATO:', m); } };
@@ -511,6 +511,44 @@ const srv = app.listen(0, async () => {
         r = await adm('POST', '/api/amal', { kind: 'out', accs: [a3, a4], rows: [{ acc: a3, amount: 1000 }, { acc: a4, amount: 2000 }], aid: uz }); ok(r.s === 200 && r.j.rows.length === 2 && r.j.rows.every(o => o.type === 'WITHDRAW'), 'qo‘lda miqdorlar bilan chiqim');
         r = await adm('POST', '/api/amal', { kind: 'zzz', accs: [a3], total: 1 }); ok(r.s === 400, 'noma’lum amal turi rad etiladi');
       }
+    }
+    /* ===== Karta orqali onlayn depozit (bank ekvayringi; sinov banki) ===== */
+    { const BP = require('../src/bankpay'), mb = BP.get(), cs = async () => (await cl4('GET', '/api/state')).j, a4 = (await cs()).accounts[0].id;
+      const hook = async (obj, sig) => { const body = JSON.stringify(obj), w = await fetch(base + '/api/webhook/bankpay', { method: 'POST', headers: { 'content-type': 'application/json', 'x-signature': sig === undefined ? BP.sign('mock-secret', body) : sig }, body }); let j = {}; try { j = await w.json(); } catch (e) { /* bo'sh */ } return { s: w.status, j }; };
+      const nTx = async () => (await cs()).tx.length, depOf = async id => (await cs()).dep.filter(x => x.id === id)[0];
+      let st0 = await cs(); ok(st0.settings.bankpay.on && st0.settings.bankpay.mock, 'karta to‘lovi ulangan (sinov banki)');
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 500, method: 'card' }); ok(r.s === 400, 'kam summa rad etiladi');
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 60000000, method: 'card' }); ok(r.s === 400, 'yuqori chegaradan oshiq summa rad etiladi');
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 250000, method: 'card' }); ok(r.s === 200 && /^\/pay\/mock\/D/.test(r.j.payUrl), 'karta arizasi yaratildi, bank sahifasi manzili: ' + JSON.stringify(r.j)); const id = r.j.id, n0 = await nTx();
+      let d = await depOf(id); ok(d.online && d.status === 'To‘lov kutilmoqda' && d.steps.created && !d.steps.charged && !d.steps.credited, '1-bosqich: ariza yaratildi');
+      r = await adm('POST', '/api/dep/' + id, { status: 'Bajarildi' }); ok(r.s === 400, 'admin karta to‘lovini qo‘lda tasdiqlay olmaydi');
+      r = await hook({ order_id: id, id: 'X1', status: 'paid', amount: 25000000 }, 'xato-imzo'); ok(r.s === 400 && (await nTx()) === n0, 'imzosi noto‘g‘ri callback rad etildi, hisobga yozilmadi');
+      r = await hook({ order_id: id, id: 'X1', status: 'paid', amount: 25000000 }); ok(r.s === 200 && r.j.result === 'tasdiqlanmadi' && (await nTx()) === n0, 'bank o‘zi tasdiqlamasa, callbackka ishonilmaydi: ' + JSON.stringify(r.j));
+      mb.set(id, 'paid'); r = await hook({ order_id: id, id: 'X1', status: 'paid', amount: 25000000 }); ok(r.s === 200 && r.j.result === 'ok', 'to‘lov tasdiqlandi: ' + JSON.stringify(r.j));
+      d = await depOf(id); const sx = await cs(), last = sx.tx[sx.tx.length - 1]; ok(d.status === 'Bajarildi' && d.steps.charged && d.steps.credited && !d.steps.received && sx.tx.length === n0 + 1 && last.type === 'DEPOZIT' && last.amount === 250000 && last.acc === a4, '2-3 bosqich: kartadan yechildi, hisob to‘ldirildi (+250 000)');
+      r = await hook({ order_id: id, id: 'X1', status: 'paid', amount: 25000000 }); ok(r.j.result === 'allaqachon' && (await nTx()) === n0 + 1, 'takroriy callback ikkinchi marta yozmaydi');
+      r = await cl4('POST', '/api/dep/' + id + '/received', {}); ok(r.s === 403, 'mijoz "bank hisobiga tushdi" bosa olmaydi');
+      r = await adm('POST', '/api/dep/' + id + '/received', { ref: 'ko‘chirma 55' }); ok(r.s === 200, 'admin: bank hisobiga tushdi'); d = await depOf(id); ok(d.steps.sent && d.steps.received, '4-5 bosqich: bank hisob-kitobi tasdiqlandi');
+      r = await adm('POST', '/api/dep/' + id + '/received', {}); ok(r.s === 400, 'ikkinchi marta tasdiqlab bo‘lmaydi');
+      /* summa mos kelmasa */
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 100000, method: 'card' }); const id2 = r.j.id, n1 = await nTx(); mb.set(id2, 'paid', 99000);
+      r = await hook({ order_id: id2, id: 'X2', status: 'paid', amount: 9900000 }); d = await depOf(id2); ok(r.j.result === 'summa' && d.status === 'Tekshiruv kerak' && (await nTx()) === n1, 'summa mos kelmasa hisobga tushirilmaydi, tekshiruvga qo‘yiladi');
+      r = await adm('POST', '/api/dep/' + id2, { status: 'Bajarildi', amount: 99000 }); ok(r.s === 200 && (await nTx()) === n1 + 1, 'admin tekshirib, haqiqiy summani tasdiqladi');
+      /* bank rad etdi */
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 120000, method: 'card' }); const id3 = r.j.id, n2 = await nTx(); mb.set(id3, 'failed');
+      r = await hook({ order_id: id3, id: 'X3', status: 'failed', amount: 12000000 }); d = await depOf(id3); ok(r.j.result === 'rad' && d.status === 'Rad etildi' && (await nTx()) === n2, 'bank rad etsa hisobga tushmaydi');
+      /* mijoz bankdan qaytganda holat bankdan so'raladi */
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 130000, method: 'card' }); const id4 = r.j.id, n3 = await nTx(); mb.set(id4, 'paid');
+      const rr = await fetch(base + '/pay/return/' + id4, { redirect: 'manual' }); d = await depOf(id4); ok(rr.status === 302 && rr.headers.get('location') === '/#/funds' && d.status === 'Bajarildi' && (await nTx()) === n3 + 1, 'bankdan qaytganda holat so‘raladi va hisob to‘ladi');
+      /* qo'lda "Holatni tekshirish" */
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 140000, method: 'card' }); const id5 = r.j.id;
+      r = await cl4('POST', '/api/dep/' + id5 + '/check', {}); ok(r.s === 200 && r.j.result === 'tasdiqlanmadi' || r.j.result === 'kutilmoqda', 'to‘lanmagan ariza: kutilmoqda'); mb.set(id5, 'paid');
+      r = await cl3('POST', '/api/dep/' + id5 + '/check', {}); ok(r.s === 404, 'boshqa mijoz arizasini tekshira olmaydi');
+      r = await cl4('POST', '/api/dep/' + id5 + '/check', {}); ok(r.s === 200 && r.j.result === 'ok', 'tekshirish: to‘lov topildi va hisob to‘ldi');
+      /* qaytarilgan to'lov: avtomatik ayirilmaydi, adminga xabar */
+      const n4 = await nTx(); r = await hook({ order_id: id5, id: 'X5', status: 'refunded', amount: 14000000 }); d = await depOf(id5); ok(r.j.result === 'qaytarildi' && d.refunded && (await nTx()) === n4, 'qaytarilgan to‘lov belgilandi (hisobdan qo‘lda ishlanadi)');
+      /* kutilayotgan eski arizalar bekor qilinadi */
+      r = await cl4('POST', '/api/dep', { acc: a4, amount: 150000, method: 'card' }); const id6 = r.j.id; ok((await depOf(id6)).status === 'To‘lov kutilmoqda', 'kutilayotgan ariza (24 soat sinovi uchun)');
     }
   } catch (e) { fail++; console.log('ISTISNO', e); }
   console.log('Natija: ' + pass + ' o‘tdi, ' + fail + ' xato'); srv.close(); process.exit(fail ? 1 : 0);

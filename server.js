@@ -17,6 +17,7 @@ const tabular = require('./src/tabular');
 const accounting = require('./src/accounting');
 const quarters = require('./src/quarters');
 const exchanges = require('./src/exchanges');
+const bankpay = require('./src/bankpay');
 const Core = require('./public/core.js');
 const Ind = require('./public/indicators.js');
 
@@ -30,7 +31,8 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/api/history/import', express.json({ limit: '40mb' }));
-app.use(express.json({ limit: '300kb' }));
+app.use('/api/webhook', express.urlencoded({ extended: false, limit: '50kb' }));
+app.use(express.json({ limit: '300kb', verify: (req, res, buf) => { if (req.url.indexOf('/api/webhook') === 0) req.rawBody = buf.toString('utf8'); } }));
 app.use(express.text({ type: ['text/*'], limit: '50kb' }));
 app.use('/api', auth.middleware);
 app.use('/api', (req, res, next) => {
@@ -104,7 +106,7 @@ function AU(req, action, detail, who) {
 const ACTIONS = [[/^\/reports\/generate$/, 'Hisobot tayyorladi'], [/^\/consent$/, 'Shartnoma bandlarini tasdiqladi'], [/^\/contract\/admin$/, 'Shartnoma bandlarini o‘zgartirdi'], [/^\/register$/, 'Ro‘yxatdan o‘tdi'], [/^\/login$/, 'Tizimga kirdi'], [/^\/verify$/, 'Emailni tasdiqladi'], [/^\/logout$/, 'Tizimdan chiqdi'], [/^\/reset$/, 'Parolni kod bilan tikladi'], [/^\/me$/, 'Profilni o‘zgartirdi'], [/^\/me\/password$/, 'Parolni o‘zgartirdi'],
   [/^\/sessions\/end$/, 'Seansni tugatdi'], [/^\/users\/[^/]+$/, 'Foydalanuvchini o‘zgartirdi'], [/^\/assets$/, 'Aktivni saqladi'], [/^\/accounts$/, 'Hisob ochdi'], [/^\/accounts\/[^/]+$/, 'Hisob sozlamasini o‘zgartirdi'],
   [/^\/tx$/, 'Tranzaksiya kiritdi'], [/^\/tx\/[^/]+\/void$/, 'Tranzaksiyani bekor qildi'], [/^\/tx\/[^/]+\/edit$/, 'Tranzaksiyani tahrirladi'], [/^\/transfers$/, 'Ichki o‘tkazma bajardi'],
-  [/^\/wd$/, 'Yechish so‘rovi yubordi'], [/^\/wd\/[^/]+$/, 'Yechish so‘rovini ko‘rib chiqdi'], [/^\/dep$/, 'Depozit so‘rovi yaratdi'], [/^\/dep\/[^/]+\/(paid|cancel)$/, 'Depozit so‘rovini yangiladi'], [/^\/dep\/[^/]+$/, 'Depozit so‘rovini ko‘rib chiqdi'],
+  [/^\/wd$/, 'Yechish so‘rovi yubordi'], [/^\/wd\/[^/]+$/, 'Yechish so‘rovini ko‘rib chiqdi'], [/^\/dep$/, 'Depozit so‘rovi yaratdi'], [/^\/dep\/[^/]+\/check$/, 'Karta to‘lovi holatini tekshirdi'], [/^\/dep\/[^/]+\/received$/, 'Karta to‘lovi bank hisobiga tushganini tasdiqladi'], [/^\/dep\/[^/]+\/(paid|cancel)$/, 'Depozit so‘rovini yangiladi'], [/^\/dep\/[^/]+$/, 'Depozit so‘rovini ko‘rib chiqdi'],
   [/^\/signals$/, 'Qo‘lda signal yubordi'], [/^\/orders\/[^/]+\/send$/, 'Orderni bozorga yubordi'], [/^\/orders\/[^/]+\/cancel$/, 'Orderni bekor qildi'], [/^\/orders\/[^/]+\/edit$/, 'Signal orderini o‘zgartirdi'], [/^\/orders\/poll$/, 'Birja holatini tekshirdi'], [/^\/exchanges\/test$/, 'Birja ulanishini tekshirdi'], [/^\/settings$/, 'Sozlamalarni o‘zgartirdi'], [/^\/prices\/refresh$/, 'Narxlarni yangiladi'],
   [/^\/bonds\/accept$/, 'Obligatsiya kuponi/so‘ndirishini yozdi'], [/^\/deposits\/accept$/, 'Omonat foizini yozdi'], [/^\/history\/import$/, 'Tarixiy ma‘lumot yukladi'], [/^\/history\/reset$/, 'Aktiv tarixini tozaladi'], [/^\/history\/sync$/, 'Tarixni havoladan yangiladi'], [/^\/me\/profile$/, 'Profilni yangiladi'], [/^\/me\/avatar$/, 'Profil rasmini o‘zgartirdi'], [/^\/chat\/create$/, 'Chat/kanal yaratdi'], [/^\/chat\/[^/]+\/members$/, 'Chat a’zolarini o‘zgartirdi'], [/^\/deposits\/accept-group$/, 'Omonat foizini barcha mijozlarga yozdi'], [/^\/acx\/cfg$/, 'Buxgalteriya sozlamasini o‘zgartirdi'], [/^\/acx\/emp$/, 'Xodimni saqladi (buxgalteriya)'], [/^\/acx\/con$/, 'Shartnomani saqladi (buxgalteriya)'], [/^\/acx\/pay$/, 'Shartnoma to‘lovini kiritdi'], [/^\/acx\/pay\/[^/]+\/void$/, 'Shartnoma to‘lovini bekor qildi'], [/^\/acx\/je$/, 'Qo‘lda buxgalteriya yozuvini kiritdi'], [/^\/acx\/je\/[^/]+\/void$/, 'Buxgalteriya yozuvini bekor qildi'], [/^\/alerts$/, 'Alert saqladi'], [/^\/alerts\/[^/]+\/(del|toggle)$/, 'Alertni o‘zgartirdi']];
 app.use('/api', (req, res, next) => {
@@ -240,7 +242,7 @@ app.get('/api/state', ANY, wrap((req, res) => {
   let dep = db.all('dep');
   if (!isStaff) { accounts = accounts.filter(a => a.uid === u.id); const ids = new Set(accounts.map(a => a.id)); tx = tx.filter(t => ids.has(t.acc) && t.status === 'Bajarildi').map(t => { const c = Object.assign({}, t); delete c.edits; delete c.voidReason; return c; }); wd = wd.filter(w => ids.has(w.acc)); dep = dep.filter(w => ids.has(w.acc)); }
   const sessions = sessionsOf(u.id).map(s => Object.assign(s, { cur: s.id === req.sid }));
-  const out = { rev: db.rev(), me: Object.assign(pubUser(u), { sessions, consent: { ok: isStaff || contract.ok(u.id), ver: contract.doc().ver, t: ((db.get('consent', u.id + ':' + contract.doc().ver) || {}).t) || 0 } }), settings: { fx: st.fx, fxT: st.fxT, nBase: st.nBase, nHold: st.nHold, nSell: st.nSell, pay: st.pay || [], benchRate: st.benchRate != null ? st.benchRate : 25, stoch: stochPar(st), mainAsset: Object.fromEntries(STOCH_G.map(g => { const a = mainAsset(g, st); return [g, a ? a.id : '']; })), benchPay: st.benchPay || 'none' },
+  const out = { rev: db.rev(), me: Object.assign(pubUser(u), { sessions, consent: { ok: isStaff || contract.ok(u.id), ver: contract.doc().ver, t: ((db.get('consent', u.id + ':' + contract.doc().ver) || {}).t) || 0 } }), settings: { fx: st.fx, fxT: st.fxT, nBase: st.nBase, nHold: st.nHold, nSell: st.nSell, pay: st.pay || [], benchRate: st.benchRate != null ? st.benchRate : 25, stoch: stochPar(st), mainAsset: Object.fromEntries(STOCH_G.map(g => { const a = mainAsset(g, st); return [g, a ? a.id : '']; })), benchPay: st.benchPay || 'none', bankpay: bankpay.info() },
     stoch: stochMap(),
     assets: db.all('assets').map(a => Object.assign(isStaff ? a : { id: a.id, sym: a.sym, name: a.name, group: a.group, curr: a.curr, price: a.price, rate: a.rate, dpay: a.dpay, dcap: a.dcap, dstart: a.dstart, target: a.target, archived: a.archived, venue: a.venue }, { isin: a.isin || isinOf(a), issuer: a.issuer || '' })),
     accounts, tx, wd, dep };
@@ -480,14 +482,83 @@ function ownDep(req) {
   const d = db.get('dep', req.params.id); if (!d) throw bad('So‘rov topilmadi.', 404);
   if (d.uid !== req.user.id && req.user.role !== 'admin') throw bad('So‘rov topilmadi.', 404); return d;
 }
-app.post('/api/dep', ANY, wrap((req, res) => {
+app.post('/api/dep', ANY, wrap(async (req, res) => {
   const b = req.body || {}, acc = db.get('accounts', b.acc);
   if (!acc || (acc.uid !== req.user.id && req.user.role !== 'admin')) throw bad('Hisob topilmadi.', 404);
   const amount = +b.amount; if (!(amount >= 1000)) throw bad('Summa kamida 1 000 so‘m bo‘lsin.');
+  if (b.method === 'card') {      /* karta orqali onlayn to'lov (bank ekvayringi) */
+    const inf = bankpay.info(), bp = bankpay.get(); if (!inf.on) throw bad('Karta orqali to‘lov hali ulanmagan.');
+    if (amount > inf.max) throw bad('Bitta to‘lov ' + inf.max + ' so‘mdan oshmasin.');
+    if (db.all('dep').filter(x => x.online && x.uid === acc.uid && x.status === ST_WAIT && now() - x.t < 36e5).length >= 5) throw bad('Tugallanmagan to‘lovlar ko‘p. Avval ularni yakunlang yoki bekor qiling.');
+    const d = db.put('dep', { id: 'D' + (1000 + db.seq('dep')), acc: acc.id, uid: acc.uid, amount, method: 'card', methodName: inf.name, online: true, code: 'BRL-' + crypto.randomBytes(3).toString('hex').toUpperCase(), status: ST_WAIT, t: now(), ref: '', steps: { created: now() } });
+    try { const base = bankpay.publicUrl(req), r = await bp.create(d, { ret: base + '/pay/return/' + d.id, cb: base + '/api/webhook/bankpay' }); d.xid = r.xid; d.payUrl = r.payUrl; db.put('dep', d); }
+    catch (e) { d.status = 'Bekor qilingan'; d.fin = now(); d.reason = String(e.message).slice(0, 200); db.put('dep', d); throw e; }
+    req.ad = d.id + ' karta to‘lovi ' + amount + ' so‘m'; return res.json({ ok: true, id: d.id, payUrl: d.payUrl });
+  }
   const pm = (settings().pay || []).filter(x => x.id === b.method)[0]; if (!pm) throw bad('To‘lov usulini tanlang.');
   const d = db.put('dep', { id: 'D' + (1000 + db.seq('dep')), acc: acc.id, uid: acc.uid, amount, method: pm.id, methodName: pm.name, code: 'BRL-' + crypto.randomBytes(3).toString('hex').toUpperCase(), status: ST_WAIT, t: now(), ref: '' });
   req.ad = d.id + ' ' + amount + ' so‘m, ' + pm.name; res.json({ ok: true, id: d.id });
 }));
+/* ---- Karta to'lovi: bank natijasi -> hisobga tushirish ----
+   Himoya: (1) callback imzosi tekshiriladi, (2) bankdan holat qayta so'raladi, (3) summa arizadagi bilan solishtiriladi,
+   (4) bir ariza faqat BIR marta hisobga yoziladi (takroriy callbackda ikkinchi marta yozilmaydi). */
+function notifyAdmins(text, name) { db.db.prepare("SELECT id FROM users WHERE role='admin'").all().forEach(ad => db.put('alog', { id: 'G' + (100000 + db.seq('alog')), uid: ad.id, alert: 'dep', aid: '', sym: 'Depozit', tf: '', t: now(), price: null, name: name || 'Karta to‘lovi', text, signal: '' })); }
+async function settleOnline(id, evt) {
+  const d0 = db.get('dep', id); if (!d0 || !d0.online) return 'topilmadi';
+  if (evt.state === 'pending') return 'kutilmoqda';
+  if (evt.state === 'failed') { if (d0.status !== ST_WAIT) return 'e’tiborsiz'; d0.status = 'Rad etildi'; d0.fin = now(); d0.by = 'Bank'; d0.reason = 'To‘lov amalga oshmadi (bank rad etdi yoki muddati tugadi).'; db.put('dep', d0); return 'rad'; }
+  if (evt.state === 'refunded') { d0.refunded = now(); d0.flag = true; db.put('dep', d0); notifyAdmins(d0.id + ' to‘lovi bank tomonidan QAYTARILDI (' + d0.amount + ' so‘m). Mijoz hisobini qo‘lda tekshiring.'); return 'qaytarildi'; }
+  if (d0.status === 'Bajarildi') return 'allaqachon';
+  const bp = bankpay.get(), conf = await bp.status(d0);            /* xato bo'lsa istisno -> callback 500 qaytaradi, bank qayta yuboradi */
+  if (conf.state !== 'paid') return 'tasdiqlanmadi';
+  return db.tx(() => {
+    const d = db.get('dep', id); if (d.status === 'Bajarildi') return 'allaqachon';
+    const t = now(), steps = Object.assign({}, d.steps, { charged: t });
+    if (Math.abs(conf.amount - d.amount) > 0.5) {
+      Object.assign(d, { status: 'Tekshiruv kerak', flag: true, steps, reason: 'Summa mos kelmadi: bankda ' + conf.amount + ', arizada ' + d.amount + '. Tekshirib tasdiqlang.' }); db.put('dep', d);
+      notifyAdmins(d.id + ': bank summasi (' + conf.amount + ') arizadagidan (' + d.amount + ') farq qiladi. Hisobga TUSHIRILMADI — tekshiring.'); return 'summa';
+    }
+    const S = loadS(), cash = Core.cashAsset(S); if (!cash) throw bad('Naqd so‘m aktivi (UZS) katalogda yo‘q.');
+    const rec = writeTx(S, { acc: d.acc, aid: cash.id, type: 'DEPOZIT', amount: d.amount, price: 1, ex: 'Bank', note: 'Karta orqali depozit ' + d.id + ' (' + d.methodName + (d.xid ? ', bank raqami ' + d.xid : '') + ')' }, 'Bank (avtomat)', 'Karta', null);
+    steps.credited = t; Object.assign(d, { status: 'Bajarildi', fin: t, by: 'Bank (avtomat)', amountOk: d.amount, tx: rec.id, steps }); db.put('dep', d); return 'ok';
+  });
+}
+app.post('/api/webhook/bankpay', wrap(async (req, res) => {
+  const bp = bankpay.get(); let evt;
+  try { evt = bp.parseCallback(req.rawBody || '', req.headers); } catch (e) { console.error('bank callback:', e.message); return res.status(400).json({ error: e.message }); }
+  const r = await settleOnline(evt.orderId, evt); res.json({ ok: true, result: r });
+}));
+/* mijoz bankdan qaytganda: holatni bankdan so'rab, mijozni "Mablag'lar" sahifasiga yo'naltirish */
+app.get('/pay/return/:id', wrap(async (req, res) => {
+  const d = db.get('dep', req.params.id); if (d && d.online && d.status === ST_WAIT) { try { await settleOnline(d.id, await bankpay.get().status(d)); } catch (e) { console.error('qaytish tekshiruvi:', e.message); } }
+  res.redirect('/#/funds');
+}));
+app.post('/api/dep/:id/check', ANY, wrap(async (req, res) => {
+  const d = ownDep(req); if (!d.online) throw bad('Bu so‘rov karta to‘lovi emas.');
+  let r = 'kutilmoqda'; if (d.status === ST_WAIT) r = await settleOnline(d.id, await bankpay.get().status(d));
+  res.json({ ok: true, result: r });
+}));
+/* bank hisobiga mablag' kelib tushganini admin tasdiqlaydi (hisob-kitob) */
+app.post('/api/dep/:id/received', A, wrap((req, res) => {
+  const d = db.get('dep', req.params.id); if (!d || !d.online || d.status !== 'Bajarildi') throw bad('Bu so‘rov uchun amal mumkin emas.', 404);
+  if (d.steps && d.steps.received) throw bad('Allaqachon tasdiqlangan.');
+  const t = now(); d.steps = Object.assign({}, d.steps, { sent: (d.steps || {}).sent || t, received: t }); d.bankRef = String((req.body || {}).ref || '').slice(0, 120); db.put('dep', d);
+  req.ad = d.id + ' bank hisobiga tushdi ' + d.amount + ' so‘m'; res.json({ ok: true });
+}));
+/* mock bank sahifasi (faqat PAY_MOCK=1) */
+if (process.env.PAY_MOCK === '1') {
+  app.get('/pay/mock/:id', (req, res) => { const d = db.get('dep', req.params.id); if (!d) return res.status(404).send('yo‘q'); res.type('html').send('<meta charset=utf-8><meta name=viewport content="width=device-width"><body style="font:16px sans-serif;max-width:420px;margin:40px auto;padding:0 16px"><h2>Sinov bank sahifasi</h2><p>' + d.id + ' · ' + d.amount + ' so‘m</p><form method=post action="/pay/mock/' + d.id + '/ok"><button style="padding:12px 20px">To‘lash (muvaffaqiyatli)</button></form><br><form method=post action="/pay/mock/' + d.id + '/fail"><button style="padding:12px 20px">Rad etish</button></form>'); });
+  app.post('/pay/mock/:id/:r', wrap(async (req, res) => { const d = db.get('dep', req.params.id); if (!d) throw bad('yo‘q', 404); const bp = bankpay.get(); bp.set(d.id, req.params.r === 'ok' ? 'paid' : 'failed'); await settleOnline(d.id, { state: req.params.r === 'ok' ? 'paid' : 'failed' }); res.redirect('/pay/return/' + d.id); }));
+}
+/* yo'qolgan callbacklar uchun: kutilayotgan karta to'lovlarini bankdan so'rash; 24 soatda to'lanmasa — muddati o'tgan */
+async function pullPendingDeps() {
+  const bp = bankpay.get(); if (!bp.ready()) return 0; let n = 0;
+  for (const d of db.all('dep').filter(x => x.online && x.status === ST_WAIT)) {
+    try { const r = await settleOnline(d.id, await bp.status(d)); if (r === 'ok' || r === 'rad') n++; } catch (e) { console.error('karta to‘lovi tekshiruvi:', e.message); }
+    const c = db.get('dep', d.id); if (c.status === ST_WAIT && now() - c.t > 864e5) { c.status = 'Bekor qilingan'; c.fin = now(); c.reason = 'Muddati o‘tdi (24 soat to‘lanmadi).'; db.put('dep', c); }
+  }
+  return n;
+}
 app.post('/api/dep/:id/paid', ANY, wrap((req, res) => {
   const d = ownDep(req); if (d.status !== ST_WAIT) throw bad('So‘rov holati o‘zgargan.');
   d.status = ST_CHECK; d.paidT = now(); d.ref = String((req.body || {}).ref || '').slice(0, 200); db.put('dep', d); req.ad = d.id + ' to‘lov qildim, ref: ' + d.ref; res.json({ ok: true });
@@ -498,8 +569,9 @@ app.post('/api/dep/:id/cancel', ANY, wrap((req, res) => {
 }));
 app.post('/api/dep/:id', A, wrap((req, res) => {
   const d = db.get('dep', req.params.id); if (!d) throw bad('So‘rov topilmadi.', 404);
-  if (d.status !== ST_WAIT && d.status !== ST_CHECK) throw bad('So‘rov allaqachon ko‘rib chiqilgan.');
+  if (d.status !== ST_WAIT && d.status !== ST_CHECK && d.status !== 'Tekshiruv kerak') throw bad('So‘rov allaqachon ko‘rib chiqilgan.');
   const b = req.body || {};
+  if (d.online && d.status === ST_WAIT && b.status === 'Bajarildi') throw bad('Karta to‘lovi bank tasdiqlagach avtomatik hisobga tushadi; qo‘lda tasdiqlab bo‘lmaydi.');
   if (b.status === 'Rad etildi') { d.status = 'Rad etildi'; d.fin = now(); d.by = req.user.email; d.reason = String(b.reason || '').slice(0, 200); db.put('dep', d); req.ad = d.id + ' rad etildi ' + d.reason; return res.json({ ok: true }); }
   if (b.status !== 'Bajarildi') throw bad('Holat noto‘g‘ri.');
   const amount = b.amount !== undefined && b.amount !== '' ? +b.amount : d.amount; if (!(amount > 0)) throw bad('Summa noto‘g‘ri.');
@@ -1119,7 +1191,7 @@ function bootAdmin() {
 }
 const PORT = +(process.env.PORT || 3000);
 if (require.main === module) {
-  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => pollOrders().catch(e => console.error('birja tekshiruvi:', e.message)), 15e3); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
+  settings(); bootAdmin(); scheduleRefresh(); autoBackup(); setInterval(autoBackup, 3600e3); setTimeout(() => reportLoop(), 60000); setInterval(() => pullPendingDeps().catch(e => console.error(e.message)), 300e3); setInterval(() => pollOrders().catch(e => console.error('birja tekshiruvi:', e.message)), 15e3); setInterval(() => { try { autoDeposits(); } catch (e) { console.error('omonat avto:', e.message); } }, 600e3); setInterval(() => reportLoop(), 3600e3); setTimeout(() => stochRun().catch(e => console.error('stoch:', e.message)), 40000); setInterval(() => stochRun().catch(e => console.error('stoch:', e.message)), 3600e3); setTimeout(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 25000); setInterval(() => { try { bondLoop(); } catch (e) { console.error('obligatsiya:', e.message); } }, 3600e3); setInterval(() => checkAlerts().catch(e => console.error('alertlar:', e.message)), 60e3);
   /* uzse.uz kunlik yangilash: har 30 daqiqada (havola sozlangan bo'lsa); seans 16:00 dan keyin ham ishlaydi */
   setInterval(() => syncAllHist().catch(e => console.error('tarix yangilash:', e.message)), 5 * 60e3); setTimeout(() => { db.all('assets').forEach(x => seedPrice(x.id)); syncAllHist().catch(() => { }); }, 15000);
   app.listen(PORT, () => {

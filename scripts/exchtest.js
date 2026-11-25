@@ -18,6 +18,8 @@ const srv = http.createServer((req, res) => {
     if (P === '/api/v2/spot/trade/orderInfo') return J({ code: '00000', data: [{ status: 'partially_filled', baseVolume: '0.002', priceAvg: '80000' }] });
     if (P === '/api/v2/spot/trade/fills') return J({ code: '00000', data: [] });
     if (P === '/api/v2/spot/account/assets') return J({ code: '00000', data: [] });
+    if (P === '/orders' && req.method === 'POST') return J({ id: 'B-1', pay_url: 'https://bank.test/pay/B-1' });
+    if (P === '/orders/B-1') return J({ id: 'B-1', status: 'paid', amount: 25000000 });
     if (P === '/v1/api/iserver/auth/status') return J({ authenticated: true });
     if (P === '/v1/api/iserver/accounts') return J({ accounts: ['U1'] });
     if (P === '/v1/api/iserver/secdef/search') return J([{ conid: 265598, sections: [{ secType: 'STK' }] }]);
@@ -54,6 +56,13 @@ srv.listen(0, async () => {
     r = await ib.place({ sym: 'AAPL', side: 'BUY', qty: 2, price: 190.5, ot: 'LIMIT', cid: 'O-2004' }); ok(r.xid === '555' && r.xconid === 265598, 'ibkr place (tasdiq savoli bilan): ' + JSON.stringify(r));
     const io = JSON.parse(log.filter(l => l.p === '/v1/api/iserver/account/U1/orders')[0].b).orders[0]; ok(io.conid === 265598 && io.side === 'BUY' && io.orderType === 'LMT' && io.price === 190.5 && io.cOID === 'O-2004' && io.quantity === 2, 'ibkr order tanasi: ' + JSON.stringify(io));
     r = await ib.status({ id: 'O-2004', xid: '555' }); ok(r.state === 'filled' && r.filled === 2 && r.avg === 190.5, 'ibkr status: ' + JSON.stringify(r));
+    /* bank ekvayringi (umumiy shablon) */
+    Object.assign(process.env, { BANKPAY_API: base, BANKPAY_MERCHANT: 'M1', BANKPAY_SECRET: 'bsec' }); const bk = require('../src/bankpay').get(); ok(bk.ready() && !bk.mock, 'bankpay ready');
+    r = await bk.create({ id: 'D1001', amount: 250000 }, { ret: 'https://x/r', cb: 'https://x/cb' }); ok(r.xid === 'B-1' && /bank\.test/.test(r.payUrl), 'bankpay create: ' + JSON.stringify(r));
+    const bo = log.filter(l => l.p === '/orders' && l.m === 'POST')[0], bb = JSON.parse(bo.b); ok(bb.amount === 25000000 && bb.order_id === 'D1001' && bb.currency === '860' && bo.h['x-signature'] === crypto.createHmac('sha256', 'bsec').update(bo.b).digest('hex'), 'bankpay so‘rov tanasi va imzosi (tiyinda): ' + bo.b);
+    r = await bk.status({ id: 'D1001', xid: 'B-1' }); ok(r.state === 'paid' && r.amount === 250000, 'bankpay status: ' + JSON.stringify(r));
+    const cbb = JSON.stringify({ order_id: 'D1001', id: 'B-1', status: 'paid', amount: 25000000 }); r = bk.parseCallback(cbb, { 'x-signature': crypto.createHmac('sha256', 'bsec').update(cbb).digest('hex') }); ok(r.orderId === 'D1001' && r.state === 'paid' && r.amount === 250000, 'bankpay callback o‘qildi');
+    ok((() => { try { bk.parseCallback(cbb, { 'x-signature': 'xato' }); return false; } catch (e) { return true; } })(), 'bankpay noto‘g‘ri imzo rad etildi');
     /* kalitsiz */
     delete process.env.BINANCE_API_KEY; ok(!ex.get('Binance').ready(), 'kalitsiz binance tayyor emas'); ok(ex.get('Mock') === null || process.env.EXCH_MOCK === '1', 'Mock faqat EXCH_MOCK=1 da');
     r = await ex.get('IBKR').call.call(Object.assign({}, ib, { base: () => 'http://127.0.0.1:1/x' }), 'GET', '/p').then(() => 'ok', e => e.message); ok(/Tarmoq xatosi/.test(r), 'tarmoq xatosi aniq xabar: ' + r);

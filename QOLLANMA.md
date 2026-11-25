@@ -53,6 +53,43 @@ Server o'zi ham har 6 soatda `data/backups` papkasiga zaxira nusxa saqlab boradi
 2. Aktivlar → Tarixiy ma'lumotlar → "Barcha tarixni tozalash".
 3. Barcha uzse.uz fayllarini (nomida ISIN bor) bitta bo'lib shu bo'limdagi "Yuklash" orqali qayta yuklang. Har bir aktivning "Manba kodi"da ISIN bo'lishi shart.
 
+## 2.18.0: Karta orqali onlayn depozit (bank ekvayringi, Humo/Uzcard)
+
+Mijoz Mablag'lar sahifasida summani kiritadi → bankning to'lov sahifasida kartadan to'laydi → bank BARLOSga xabar beradi → sayt tekshirib, mijoz hisobini **darhol** to'ldiradi. Mijoz 5 bosqichni ko'radi: 1) Ariza yaratildi · 2) Mablag' kartadan yechildi · 3) Hisobingiz to'ldirildi · 4) Bank mablag'ni BARLOS hisob raqamiga jo'natdi · 5) BARLOS bank hisobiga kelib tushdi. 4–5-bosqichni **admin** bank ko'chirmasi bo'yicha tasdiqlaydi (Amallar → So'rovlar → "Bank hisobiga tushdi").
+
+**Himoya (pul bilan ishlagani uchun):**
+- Bank xabarining imzosi tekshiriladi; imzosiz yoki soxta xabar rad etiladi.
+- Xabarga ishonmay, sayt bankdan holatni o'zi qayta so'raydi.
+- Bank summasi arizadagi summaga teng bo'lishi shart; farq bo'lsa hisobga TUSHIRILMAYDI, admin tekshiradi.
+- Bir ariza faqat bir marta hisobga yoziladi (bank xabarni takror yuborsa ham).
+- Bitta to'lov chegarasi (BANKPAY_MAX, sukut 50 mln so'm); tugallanmagan 5 tadan ortiq ariza ochib bo'lmaydi; 24 soatda to'lanmagan ariza bekor bo'ladi.
+- Bank to'lovni QAYTARSA, hisob avtomatik ayirilmaydi: adminga xabar tushadi va siz qo'lda hal qilasiz.
+- Admin karta to'lovini qo'lda "tasdiqlab" bo'lmaydi (faqat summa mos kelmagan holatda).
+
+**Muhim xavf (siz tanlagan tartib):** hisob bank tasdiqlashi bilan darhol to'ladi, pul esa bank hisobingizga ertasi kuni kelishi mumkin. Shu orada mijoz pulni boshqa joyga o'tkazishi yoki to'lov qaytarilishi mumkin. Admin sahifasida "bank hisobiga hali tushmagan" to'lovlar soni va summasi ko'rsatib turiladi — har kuni tekshiring. Xavf kamaytirish uchun: yangi mijozga yechishni kechiktiring yoki BANKPAY_MAX ni pasaytiring.
+
+> **Halol eslatma.** Bank ekvayringi API'si har bankda har xil. Men sizning bankingiz hujjatini ko'rmadim, shuning uchun bank bilan gaplashadigan qism (`src/bankpay.js`) umumiy shablon (JSON + HMAC imzo). Qolgan hamma narsa (ariza, 5 bosqich, hisobga tushirish, himoya) tayyor va sinalgan (sinov banki bilan, `PAY_MOCK=1`). **Bankdan API hujjatini va sinov (test) kalitlarini olgach, bankpay.js ni bankka moslash kerak** (odatda bitta fayl, maydon nomlari va imzo usuli). Haqiqiy bank bilan men bu yerdan sinay olmayman.
+
+### Haqiqiy qilish uchun sizning ishlaringiz (tartib bilan)
+1. **Yurist va bank bilan kelishing.** BARLOS yuridik shaxs sifatida mijozlardan pul qabul qiladi: bu faoliyatga qaysi litsenziya/ruxsat kerakligini va mijoz mablag'i qaysi hisobga tushishini yurist bilan aniqlang (alohida hisob raqam tavsiya etiladi).
+2. **Bankda "internet-ekvayring" (e-commerce) xizmatiga ariza bering** (Humo va Uzcard kartalari uchun). Bank sizga beradi: merchant ID, maxfiy kalit, API hujjati, **sinov (test) muhiti** va sinov kartalari.
+3. **Domen va HTTPS bo'lishi shart** (QOLLANMA B qismi). Bank xabarni faqat https manzilga yuboradi.
+4. **Bankka ikkita manzilni bering:** xabar (callback) manzili `https://SIZNING-DOMEN/api/webhook/bankpay`; mijoz qaytadigan manzil sayt o'zi beradi (`/pay/return/...`). Bank talab qilsa, server IP manzilini ham yozing.
+5. **Menga bank hujjatini va sinov ma'lumotlarini yuboring** — men `src/bankpay.js` ni moslab, sinov muhitida tekshiraman.
+6. `.env` ga yozing va serverni qayta ishga tushiring:
+```
+BANKPAY_NAME=Karta (Humo / Uzcard)
+BANKPAY_API=https://bank-api-manzili
+BANKPAY_MERCHANT=...
+BANKPAY_SECRET=...
+BANKPAY_MAX=50000000
+PUBLIC_URL=https://sizning-domen.uz
+```
+7. **Avval bank sinov muhitida** sinang, so'ng jonli rejimda **1 000–5 000 so'm** bilan o'zingiz to'lab ko'ring (4 bosqich o'tishini, hisob to'lishini, admin tasdiqlashini tekshiring). Keyin mijozlarga oching.
+8. **Har kuni:** Amallar → So'rovlar ichida "Karta to'lovlari" kartasida bank hisobingizga tushmagan to'lovlarni bank ko'chirmasi bilan solishtirib, "Bank hisobiga tushdi" ni bosing. Summa mos kelmagan yoki qaytarilgan to'lovlarga e'tibor bering.
+
+Karta tugmasi mijozga faqat `.env` to'liq yozilganda chiqadi; yozilmaguncha eski usul (rekvizit va admin tasdig'i) ishlayveradi.
+
 ## 2.17.0: Avto savdo — Signal → Order → Yakunlangan (Binance, Bitget, IBKR API)
 
 Faqat **Avto savdo** o'zgardi. Bosh sahifa, Aktivlar, Chart va mijoz menyusi o'zgarmadi.
